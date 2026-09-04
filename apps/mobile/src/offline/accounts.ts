@@ -1,8 +1,9 @@
 import {
   buildAccountBalanceRows,
+  normalizeAccountType,
+  normalizeReviewStatus,
   type Account,
   type RateBook,
-  normalizeReviewStatus,
   type Transaction,
 } from "@copilot-clone/domain";
 import type { LocalDb } from "../db/types";
@@ -43,7 +44,7 @@ function toDomainAccount(row: LocalAccount): Account {
     id: row.id,
     name: row.name,
     currency: row.currency,
-    type: row.type as Account["type"],
+    type: normalizeAccountType(row.type),
     is_archived: row.is_archived === 1,
     include_in_net_worth: Number(row.include_in_net_worth ?? 1) === 1,
     current_balance: Number(row.current_balance ?? 0),
@@ -127,7 +128,7 @@ export async function upsertAccountLocal(
       id,
       input.name,
       input.currency.toUpperCase(),
-      input.type,
+      normalizeAccountType(input.type),
       archived,
       includeNw,
       balance,
@@ -138,7 +139,7 @@ export async function upsertAccountLocal(
       id,
       name: input.name,
       currency: input.currency.toUpperCase(),
-      type: input.type,
+      type: normalizeAccountType(input.type),
       is_archived: archived === 1,
       include_in_net_worth: includeNw === 1,
       current_balance: balance,
@@ -172,6 +173,10 @@ export async function applyRemoteAccountsSnapshot(
   await db.withTransactionAsync(async () => {
     for (const row of snapshot.rows) {
       const a = row.account;
+      const balance =
+        row.balance_account != null
+          ? Number(row.balance_account)
+          : Number(a.current_balance ?? 0);
       await db.runAsync(
         `INSERT OR REPLACE INTO accounts (
            id, name, currency, type, is_archived, include_in_net_worth, current_balance
@@ -179,10 +184,10 @@ export async function applyRemoteAccountsSnapshot(
         a.id,
         a.name,
         a.currency,
-        a.type,
+        normalizeAccountType(a.type),
         a.is_archived ? 1 : 0,
         a.include_in_net_worth ? 1 : 0,
-        a.current_balance ?? 0,
+        balance,
       );
     }
   });

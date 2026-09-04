@@ -22,3 +22,9 @@
 3. Categories / Dashboard still work as before (budgets + spending line).
 
 No rebalance UI. No Plaid/Postgres.
+
+## Accounts notes
+
+- AccountType: credit_card | depository | investment | loan | other | real_estate
+- Default manual cash seed: `other` (`acc-cash-ars`)
+- `current_balance` is persisted live balance (updated on review/upsert); sync carries it via account_upsert / GET /accounts

@@ -3,6 +3,8 @@ import {
   buildAccountBalanceRows,
   computeAccountBalance,
   netWorthContributionAccountCcy,
+  normalizeAccountType,
+  recomputeBalanceFromOpeningAndTxns,
   type Account,
   type RateBook,
   type Transaction,
@@ -13,7 +15,7 @@ function account(partial: Partial<Account>): Account {
     id: "a1",
     name: "Cash",
     currency: "USD",
-    type: "cash",
+    type: "other",
     is_archived: false,
     include_in_net_worth: true,
     current_balance: 0,
@@ -43,9 +45,14 @@ function txn(partial: Partial<Transaction>): Transaction {
 }
 
 describe("account balances + NW", () => {
-  it("adds opening balance and signed txns", () => {
+  it("uses persisted current_balance as authoritative", () => {
+    const a = account({ current_balance: 850 });
+    expect(computeAccountBalance(a, [txn({ amount_account: 999 })])).toBe(850);
+  });
+
+  it("recompute helper folds opening + signed txns", () => {
     const a = account({ current_balance: 1000 });
-    const balance = computeAccountBalance(a, [
+    const balance = recomputeBalanceFromOpeningAndTxns(a, [
       txn({ type: "regular", amount_account: 200 }),
       txn({ type: "income", amount_account: 50 }),
       txn({ review_status: "needs_review", amount_account: 999 }),
@@ -54,10 +61,13 @@ describe("account balances + NW", () => {
     expect(balance).toBe(850);
   });
 
-  it("credit balances reduce NW", () => {
+  it("credit_card / loan balances reduce NW", () => {
     expect(
-      netWorthContributionAccountCcy(account({ type: "credit" }), 500),
+      netWorthContributionAccountCcy(account({ type: "credit_card" }), 500),
     ).toBe(-500);
+    expect(
+      netWorthContributionAccountCcy(account({ type: "loan" }), 200),
+    ).toBe(-200);
     expect(
       netWorthContributionAccountCcy(
         account({ include_in_net_worth: false }),
@@ -66,21 +76,27 @@ describe("account balances + NW", () => {
     ).toBe(0);
   });
 
+  it("normalizes legacy types", () => {
+    expect(normalizeAccountType("cash")).toBe("other");
+    expect(normalizeAccountType("bank")).toBe("depository");
+    expect(normalizeAccountType("credit")).toBe("credit_card");
+    expect(normalizeAccountType("other")).toBe("other");
+  });
+
   it("builds reporting NW with FX", () => {
     const book: RateBook = { "USD:ARS:2026-09-01": 1400 };
-    // Invert: ARS→USD = 1/1400
     const cash = account({
       id: "cash",
       name: "Cash ARS",
       currency: "ARS",
-      type: "cash",
+      type: "other",
       current_balance: 140_000,
     });
     const card = account({
       id: "cc",
       name: "Visa",
       currency: "USD",
-      type: "credit",
+      type: "credit_card",
       current_balance: 50,
     });
     const { rows, net_worth_reporting } = buildAccountBalanceRows({

@@ -1,27 +1,64 @@
 import { appliesToBalance, signedAmountAccount } from "./balance.js";
 import { fx_convert } from "./fx.js";
-import type { Account, RateBook, Transaction } from "./types.js";
+import type { Account, AccountType, RateBook, Transaction } from "./types.js";
 
 /** Liability account types — balance is amount owed (reduces NW). */
 export function isLiabilityAccount(account: Pick<Account, "type">): boolean {
-  return account.type === "credit";
+  return account.type === "credit_card" || account.type === "loan";
 }
 
 /**
- * Balance in account currency:
- * opening/manual current_balance + signed posted txn deltas.
+ * Authoritative balance in account currency = persisted `current_balance`.
+ * Txn deltas must be applied to `current_balance` on write (see applyBalanceDelta).
  */
 export function computeAccountBalance(
+  account: Pick<Account, "id" | "current_balance">,
+  _transactions?: Transaction[],
+): number {
+  return account.current_balance ?? 0;
+}
+
+/** Signed effect of one txn on account.current_balance (0 if not applicable). */
+export function balanceDeltaForTxn(txn: Transaction): number {
+  if (!appliesToBalance(txn)) return 0;
+  return signedAmountAccount(txn);
+}
+
+/**
+ * Legacy/repair: opening-style balance + applicable txn deltas.
+ * Used once when migrating DBs that stored opening-only current_balance.
+ */
+export function recomputeBalanceFromOpeningAndTxns(
   account: Pick<Account, "id" | "current_balance">,
   transactions: Transaction[],
 ): number {
   let balance = account.current_balance ?? 0;
   for (const txn of transactions) {
     if (txn.account_id !== account.id) continue;
-    if (!appliesToBalance(txn)) continue;
-    balance += signedAmountAccount(txn);
+    balance += balanceDeltaForTxn(txn);
   }
   return balance;
+}
+
+/** Map legacy scaffold types → spec AccountType. */
+export function normalizeAccountType(raw: string | null | undefined): AccountType {
+  switch (raw) {
+    case "credit_card":
+    case "depository":
+    case "investment":
+    case "loan":
+    case "other":
+    case "real_estate":
+      return raw;
+    case "cash":
+      return "other";
+    case "bank":
+      return "depository";
+    case "credit":
+      return "credit_card";
+    default:
+      return "other";
+  }
 }
 
 /** Net-worth contribution in account currency (assets +, liabilities −). */
@@ -98,10 +135,11 @@ export function buildAccountBalanceRows(input: {
   };
 }
 
-export const ACCOUNT_TYPES: Account["type"][] = [
-  "cash",
-  "bank",
-  "credit",
+export const ACCOUNT_TYPES: AccountType[] = [
+  "credit_card",
+  "depository",
   "investment",
+  "loan",
   "other",
+  "real_estate",
 ];

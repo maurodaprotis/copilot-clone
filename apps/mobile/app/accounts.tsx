@@ -39,7 +39,7 @@ const emptyForm = {
   id: undefined as string | undefined,
   name: "",
   currency: "USD",
-  type: "cash" as Account["type"],
+  type: "other" as Account["type"],
   current_balance: "0",
   include_in_net_worth: true,
 };
@@ -94,7 +94,7 @@ export default function AccountsScreen() {
       name: row.account.name,
       currency: row.account.currency,
       type: row.account.type,
-      current_balance: String(row.account.current_balance ?? 0),
+      current_balance: String(row.balance_account ?? row.account.current_balance ?? 0),
       include_in_net_worth: row.account.include_in_net_worth,
     });
     setMsg(null);
@@ -169,7 +169,7 @@ export default function AccountsScreen() {
             {usd(nw)}
           </Text>
           <Text style={styles.nwHint}>
-            Includes accounts flagged include_in_net_worth · credit = liability
+            Includes accounts flagged include_in_net_worth · credit_card/loan = liability
           </Text>
         </View>
 

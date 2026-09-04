@@ -20,17 +20,26 @@ export interface UserSettings {
   timezone: string;
 }
 
+/** Spec AccountType — no separate `cash` (manual cash seeds as `other`). */
+export type AccountType =
+  | "credit_card"
+  | "depository"
+  | "investment"
+  | "loan"
+  | "other"
+  | "real_estate";
+
 export interface Account {
   id: string;
   name: string;
   currency: string;
-  type: "cash" | "bank" | "credit" | "investment" | "other";
+  type: AccountType;
   is_archived: boolean;
   /** When false, omitted from net-worth total (default true). */
   include_in_net_worth: boolean;
   /**
-   * Manual opening / set balance in account currency.
-   * Displayed balance = current_balance + signed posted txn deltas.
+   * Live balance in account currency (authoritative).
+   * Updated when posted txn deltas apply; user-editable for manual set.
    */
   current_balance: number;
 }
