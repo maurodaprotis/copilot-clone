@@ -9,7 +9,9 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "export:web": "expo export --platform web --output-dir dist-web",
+    "deploy:pages": "node ./scripts/deploy-pages.mjs"
   },
   "dependencies": {
     "@copilot-clone/db": "workspace:*",

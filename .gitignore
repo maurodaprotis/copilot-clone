@@ -13,3 +13,6 @@ coverage
 *.log
 web-build
 expo-env.d.ts
+dist-web
+apps/mobile/dist
+apps/mobile/dist-web

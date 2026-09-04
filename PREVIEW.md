@@ -1,9 +1,27 @@
-# Preview — Settings / FX / Bank CSV Import
+# Preview — Copilot Clone (web + API)
 
-## URLs
+## Public URLs
 
-- Worker API: https://copilot-clone-api.maurodaprotis.workers.dev
+- **Web (Expo on Cloudflare Pages):** https://copilot-clone.pages.dev
+- **Worker API:** https://copilot-clone-api.maurodaprotis.workers.dev
 - Health: GET /health
+
+Web build is a static Expo Router export (`apps/mobile`) deployed with `wrangler pages deploy` to project `copilot-clone` (account `005a2bd41e7a63f88c945fd6fb7ba6a0`). It points at the Worker via `extra.apiUrl` / `EXPO_PUBLIC_API_URL`.
+
+### Web limitations (Paul)
+
+- **expo-sqlite in the browser:** static export succeeds, but there is **no `.wasm` shipped** in this build. Local SQLite / offline-first writes may fail or no-op in some browsers; prefer Sync against the Worker API for durable data.
+- Screens that call the API (settings, FX, import, cash-flow, sync) work over HTTPS + CORS `*`.
+- SPA routes are pre-rendered HTML (`/settings`, `/transactions`, etc.) and return 200 on Pages.
+
+Redeploy web:
+
+```bash
+node apps/mobile/scripts/deploy-pages.mjs
+```
+
+## API surface (Settings / FX / CSV import)
+
 - **Settings:** GET|POST /settings — reporting_currency (USD default), default_fx_series (official|parallel|custom), timezone/locale stubs
 - **FX:** GET /fx?rate_book= · POST /fx `{base,quote,as_of,rate,rate_book}` · POST /fx/delete
 - **Imports:** POST /imports `{csv_text,account_id}` → mapping → POST /imports/:id/mapping → ready_review → POST /imports/:id/commit → needs_review · POST /imports/:id/undo soft-delete stub
@@ -29,3 +47,9 @@
 4. Optional **Undo** soft-deletes created txns.
 
 No Plaid/Postgres. needs_review preserved.
+
+## Web hosting notes
+
+- Static Expo web export on Pages project copilot-clone.
+- Local data uses expo-sqlite (WASM/OPFS). If it fails in private mode, try Chrome.
+- Rebuild with EXPO_PUBLIC_API_URL set to the Worker URL, then export -p web.
