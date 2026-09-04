@@ -26,6 +26,8 @@ Argentina-first Copilot Money-inspired personal finance scaffold.
 - Balances skip `needs_review` (and bank `TxnStatus` pending); regular non-excluded hits budgets.
 - `review_status` is `needs_review` | `reviewed` | `excluded` — distinct from bank `TxnStatus` (`pending` | `posted`).
 - UserDO + mobile seed USD/ARS FxRate (1400) on first access so convert does not warn.
+- **Name Rules** (exact/contains) assign category on create/sync; last-write-wins; historic apply stubbed.
+- **Tags** are orthogonal (no budget impact). **Splits** use `SplitLeg`s; budgets count legs, not the parent.
 
 ## Requirements
 

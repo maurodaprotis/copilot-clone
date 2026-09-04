@@ -18,6 +18,8 @@ export function hitsBudget(txn: Transaction, category?: Category | null): boolea
   if (txn.status === "pending") return false;
   if (isExcluded(txn)) return false;
   if (normalizeReviewStatus(txn.review_status) === "needs_review") return false;
+  /** Split parents contribute via SplitLeg rows — never double-count parent. */
+  if (txn.is_split_parent) return false;
   if (category?.exclude_from_budget) return false;
   return true;
 }

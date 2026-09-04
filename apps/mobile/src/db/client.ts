@@ -1,5 +1,5 @@
 import * as SQLite from "expo-sqlite";
-import { ACCOUNTS_MIGRATE_SQL, CLIENT_SCHEMA, seedBudgetRows, seedCategoryGroupRows, seedCategoryRows } from "@copilot-clone/db";
+import { ACCOUNTS_MIGRATE_SQL, CLIENT_SCHEMA, TRANSACTIONS_MIGRATE_SQL, seedBudgetRows, seedCategoryGroupRows, seedCategoryRows } from "@copilot-clone/db";
 import { currentYearMonth, seedFxRates } from "@copilot-clone/domain";
 import {
   DEMO_ACCOUNT_CURRENCY,
@@ -92,7 +92,7 @@ export async function getDb(): Promise<LocalDb> {
       } catch {
         // column already exists
       }
-      for (const sql of ACCOUNTS_MIGRATE_SQL) {
+      for (const sql of [...ACCOUNTS_MIGRATE_SQL, ...TRANSACTIONS_MIGRATE_SQL]) {
         try {
           await db.execAsync(sql);
         } catch {

@@ -6,22 +6,26 @@ export default function MoreScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>More</Text>
-      <Text style={styles.sub}>Accounts, settings, and secondary surfaces</Text>
+      <Text style={styles.sub}>Accounts, rules, tags, and secondary surfaces</Text>
 
-      <Pressable
-        style={styles.row}
-        onPress={() => router.push("/accounts")}
-      >
+      <Pressable style={styles.row} onPress={() => router.push("/accounts")}>
         <Text style={styles.rowTitle}>Accounts</Text>
         <Text style={styles.rowHint}>
           Manual accounts by type · balances · net worth
         </Text>
       </Pressable>
 
-      <View style={[styles.row, styles.rowDisabled]}>
-        <Text style={styles.rowTitle}>Settings</Text>
-        <Text style={styles.rowHint}>Stub — FX / features later</Text>
-      </View>
+      <Pressable style={styles.row} onPress={() => router.push("/rules")}>
+        <Text style={styles.rowTitle}>Name Rules</Text>
+        <Text style={styles.rowHint}>
+          exact/contains → category · apply on create/sync
+        </Text>
+      </Pressable>
+
+      <Pressable style={styles.row} onPress={() => router.push("/tags")}>
+        <Text style={styles.rowTitle}>Tags</Text>
+        <Text style={styles.rowHint}>CRUD tags · assign on Transactions</Text>
+      </Pressable>
     </View>
   );
 }
@@ -38,7 +42,6 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "#e2e2e6",
   },
-  rowDisabled: { opacity: 0.55 },
   rowTitle: { fontSize: 16, fontWeight: "700", marginBottom: 4 },
   rowHint: { fontSize: 12, color: "#64748b" },
 });

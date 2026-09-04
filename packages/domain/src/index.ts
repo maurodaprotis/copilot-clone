@@ -8,3 +8,6 @@ export * from "./budget.js";
 export * from "./seed.js";
 export * from "./cashflow.js";
 export * from "./accounts.js";
+export * from "./rules.js";
+export * from "./splits.js";
+export * from "./tags.js";

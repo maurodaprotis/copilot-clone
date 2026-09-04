@@ -80,9 +80,13 @@ export interface Transaction {
   /** First-class exclude (T1). Also inferred from review_status === "excluded". */
   is_excluded?: boolean;
   posted_at: string;
+  /** Merchant / payee; Name Rules match this (falls back to note). */
+  name?: string | null;
   note: string | null;
   transfer_pair_id: string | null;
   fingerprint: string | null;
+  /** When true, budget spend uses SplitLeg rows, not parent category. */
+  is_split_parent?: boolean;
 }
 
 export type RateBook = Record<string, number>;
@@ -114,4 +118,39 @@ export function normalizeReviewStatus(
 
 export function isNeedsReview(value: string | null | undefined): boolean {
   return normalizeReviewStatus(value) === "needs_review";
+}
+
+export type NameRuleMatchType = "exact" | "contains";
+
+export interface NameRule {
+  id: string;
+  match_type: NameRuleMatchType;
+  /** Raw pattern; matching uses normalizeNamePattern. */
+  pattern: string;
+  category_id: string;
+  /** When true, applyHistorically may retag matches (stub OK for P0). */
+  apply_historically: boolean;
+  /** ISO timestamp; last-write-wins uses newest updated_at. */
+  updated_at: string;
+}
+
+export interface Tag {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface TransactionTag {
+  transaction_id: string;
+  tag_id: string;
+}
+
+export interface SplitLeg {
+  id: string;
+  transaction_id: string;
+  category_id: string;
+  /** Same currency as parent.amount; positive. */
+  amount: number;
+  /** Optional budget month override (YYYY-MM). */
+  year_month_override: string | null;
 }

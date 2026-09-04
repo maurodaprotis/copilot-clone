@@ -59,9 +59,9 @@ export async function addExpenseOffline(
       `INSERT INTO transactions (
         id, account_id, category_id, amount, currency,
         amount_account, amount_reporting, type, is_refund,
-        review_status, posted_at, note, transfer_pair_id, fingerprint,
-        synced, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'regular', 0, 'needs_review', ?, ?, NULL, ?, 0, ?, ?)`,
+        review_status, posted_at, name, note, transfer_pair_id, fingerprint,
+        is_split_parent, synced, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'regular', 0, 'needs_review', ?, ?, ?, NULL, ?, 0, 0, ?, ?)`,
       id,
       input.account_id,
       input.category_id ?? null,
@@ -70,6 +70,7 @@ export async function addExpenseOffline(
       amounts.amount_account,
       amounts.amount_reporting,
       posted_at,
+      input.note ?? null,
       input.note ?? null,
       fingerprint,
       now,
@@ -88,6 +89,7 @@ export async function addExpenseOffline(
       review_status: "needs_review",
       posted_at,
       note: input.note ?? null,
+      txn_name: input.note ?? null,
       fingerprint,
       account_currency: input.account_currency,
       reporting_currency: input.reporting_currency,

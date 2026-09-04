@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -25,6 +26,16 @@ import {
 } from "../../src/offline/queries";
 import { listCategories } from "../../src/offline/budgets";
 import { reviewTransaction } from "../../src/offline/reviewTransaction";
+import {
+  assignTagLocal,
+  equalSplitAmounts,
+  listSplitLegsLocal,
+  listTags,
+  listTxnTagIds,
+  setSplitLocal,
+  unassignTagLocal,
+} from "../../src/offline/rulesTagsSplits";
+import type { Tag } from "@copilot-clone/domain";
 import { syncOutbox } from "../../src/offline/syncOutbox";
 import { createApiTransport } from "../../src/sync/apiTransport";
 
@@ -42,12 +53,20 @@ export default function TransactionsScreen() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  const [detail, setDetail] = useState<LocalTransaction | null>(null);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [txnTagIds, setTxnTagIds] = useState<string[]>([]);
+  const [splitCatA, setSplitCatA] = useState("cat-dining");
+  const [splitCatB, setSplitCatB] = useState("cat-groceries");
+  const [splitMsg, setSplitMsg] = useState<string | null>(null);
+
   const reload = useCallback(async () => {
-    const [p, a, o, cats] = await Promise.all([
+    const [p, a, o, cats, tags] = await Promise.all([
       listToReview(),
       listAllTransactions(),
       countOutbox(),
       listCategories(),
+      listTags(),
     ]);
     setPending(p);
     setAll(a);
@@ -55,6 +74,7 @@ export default function TransactionsScreen() {
     const names: Record<string, string> = {};
     for (const c of cats) names[c.id] = `${c.emoji} ${c.name}`;
     setCategoryNames(names);
+    setAllTags(tags);
   }, []);
 
   useFocusEffect(
@@ -62,6 +82,59 @@ export default function TransactionsScreen() {
       void reload();
     }, [reload]),
   );
+
+  async function openDetail(txn: LocalTransaction) {
+    setDetail(txn);
+    setSplitMsg(null);
+    setTxnTagIds(await listTxnTagIds(txn.id));
+    const legs = await listSplitLegsLocal(txn.id);
+    if (legs.length >= 2) {
+      setSplitCatA(legs[0]!.category_id);
+      setSplitCatB(legs[1]!.category_id);
+    }
+  }
+
+  async function toggleTag(tagId: string) {
+    if (!detail) return;
+    setBusy(true);
+    try {
+      if (txnTagIds.includes(tagId)) {
+        await unassignTagLocal(detail.id, tagId);
+      } else {
+        await assignTagLocal(detail.id, tagId);
+      }
+      await syncOutbox(createApiTransport());
+      setTxnTagIds(await listTxnTagIds(detail.id));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onEqualSplit() {
+    if (!detail) return;
+    setBusy(true);
+    setSplitMsg(null);
+    try {
+      const amounts = equalSplitAmounts(detail.amount, 2);
+      await setSplitLocal({
+        transaction_id: detail.id,
+        parent_amount: detail.amount,
+        legs: [
+          { category_id: splitCatA, amount: amounts[0]! },
+          { category_id: splitCatB, amount: amounts[1]! },
+        ],
+      });
+      await syncOutbox(createApiTransport());
+      setSplitMsg(
+        `Split ${amounts[0]} / ${amounts[1]} · budgets use legs (not parent)`,
+      );
+      await reload();
+    } catch (e) {
+      setSplitMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function onAddOffline() {
     setBusy(true);
@@ -130,7 +203,8 @@ export default function TransactionsScreen() {
     >
       <Text style={styles.title}>Transactions</Text>
       <Text style={styles.sub}>
-        Inbox · outbox {outboxCount} · API {API_URL.replace("https://", "")}
+        Inbox · outbox {outboxCount} · tap row for tags/splits · API{" "}
+        {API_URL.replace("https://", "")}
       </Text>
 
       <View style={styles.form}>
@@ -153,7 +227,7 @@ export default function TransactionsScreen() {
           style={styles.input}
           value={note}
           onChangeText={setNote}
-          placeholder="Note"
+          placeholder="Name / note (Name Rules match this)"
         />
         <Text style={styles.catLabel}>Category (hits budget after Review)</Text>
         <View style={styles.chipRow}>
@@ -189,7 +263,7 @@ export default function TransactionsScreen() {
 
       <Text style={styles.section}>To Review ({pending.length})</Text>
       {pending.map((txn) => (
-        <View key={txn.id} style={styles.card}>
+        <Pressable key={txn.id} style={styles.card} onPress={() => void openDetail(txn)}>
           <View style={{ flex: 1 }}>
             <Text style={styles.cardTitle}>
               {txn.currency} {txn.amount.toFixed(2)}
@@ -206,12 +280,16 @@ export default function TransactionsScreen() {
           <Pressable style={styles.reviewBtn} onPress={() => void onReview(txn.id)}>
             <Text style={styles.reviewText}>Review</Text>
           </Pressable>
-        </View>
+        </Pressable>
       ))}
 
       <Text style={styles.section}>All ({all.length})</Text>
       {all.map((txn) => (
-        <View key={`all-${txn.id}`} style={[styles.card, styles.cardMuted]}>
+        <Pressable
+          key={`all-${txn.id}`}
+          style={[styles.card, styles.cardMuted]}
+          onPress={() => void openDetail(txn)}
+        >
           <Text style={styles.cardTitle}>
             {txn.currency} {txn.amount.toFixed(2)} · {txn.review_status}
           </Text>
@@ -222,8 +300,99 @@ export default function TransactionsScreen() {
               : "—"}{" "}
             · synced={txn.synced}
           </Text>
-        </View>
+        </Pressable>
       ))}
+
+      <Modal visible={!!detail} animationType="slide" transparent>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              {detail?.currency} {detail?.amount.toFixed(2)} ·{" "}
+              {detail?.note || "txn"}
+            </Text>
+            <Text style={styles.catLabel}>Tags (no budget impact)</Text>
+            <View style={styles.chipRow}>
+              {allTags.length === 0 ? (
+                <Text style={styles.cardMeta}>Create tags in More → Tags</Text>
+              ) : (
+                allTags.map((t) => {
+                  const on = txnTagIds.includes(t.id);
+                  return (
+                    <Pressable
+                      key={t.id}
+                      style={[styles.chip, on && styles.chipOn]}
+                      onPress={() => void toggleTag(t.id)}
+                    >
+                      <Text style={[styles.chipText, on && styles.chipTextOn]}>
+                        {t.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })
+              )}
+            </View>
+
+            <Text style={[styles.catLabel, { marginTop: 12 }]}>
+              Minimal split editor (equal 2-way)
+            </Text>
+            <View style={styles.chipRow}>
+              {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map(
+                (id) => (
+                  <Pressable
+                    key={`a-${id}`}
+                    style={[styles.chip, splitCatA === id && styles.chipOn]}
+                    onPress={() => setSplitCatA(id)}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        splitCatA === id && styles.chipTextOn,
+                      ]}
+                    >
+                      A:{categoryNames[id] ?? id}
+                    </Text>
+                  </Pressable>
+                ),
+              )}
+            </View>
+            <View style={styles.chipRow}>
+              {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map(
+                (id) => (
+                  <Pressable
+                    key={`b-${id}`}
+                    style={[styles.chip, splitCatB === id && styles.chipOn]}
+                    onPress={() => setSplitCatB(id)}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        splitCatB === id && styles.chipTextOn,
+                      ]}
+                    >
+                      B:{categoryNames[id] ?? id}
+                    </Text>
+                  </Pressable>
+                ),
+              )}
+            </View>
+            <Pressable
+              style={[styles.btn, styles.btnSecondary, { marginTop: 8 }]}
+              onPress={() => void onEqualSplit()}
+              disabled={busy}
+            >
+              <Text style={styles.btnText}>Save equal split</Text>
+            </Pressable>
+            {splitMsg ? <Text style={styles.msg}>{splitMsg}</Text> : null}
+
+            <Pressable
+              style={[styles.btn, { marginTop: 16, backgroundColor: "#64748b" }]}
+              onPress={() => setDetail(null)}
+            >
+              <Text style={styles.btnText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -298,4 +467,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   reviewText: { color: "#fff", fontWeight: "600", fontSize: 13 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  modalCard: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 20,
+    maxHeight: "85%",
+  },
+  modalTitle: { fontSize: 18, fontWeight: "700", marginBottom: 12 },
 });

@@ -1,8 +1,10 @@
 import { hitsBudget } from "./balance.js";
+import { splitBudgetContributions } from "./splits.js";
 import type {
   BudgetMonth,
   BudgetRolloverMode,
   Category,
+  SplitLeg,
   Transaction,
 } from "./types.js";
 
@@ -36,9 +38,34 @@ export function computeCategorySpent(input: {
   category_id: string;
   year_month: string;
   category?: Category | null;
+  /** When provided, split parents contribute via legs (no double-count). */
+  split_legs?: SplitLeg[];
+  categories?: Category[];
 }): number {
+  const legsByTxn = new Map<string, SplitLeg[]>();
+  for (const leg of input.split_legs ?? []) {
+    const arr = legsByTxn.get(leg.transaction_id) ?? [];
+    arr.push(leg);
+    legsByTxn.set(leg.transaction_id, arr);
+  }
+  const catMap = new Map((input.categories ?? []).map((c) => [c.id, c]));
+  if (input.category) catMap.set(input.category.id, input.category);
+
   let spent = 0;
   for (const txn of input.transactions) {
+    if (txn.is_split_parent) {
+      const legs = legsByTxn.get(txn.id) ?? [];
+      for (const c of splitBudgetContributions({
+        parent: txn,
+        legs,
+        categories: catMap,
+      })) {
+        if (c.category_id !== input.category_id) continue;
+        if (c.year_month !== input.year_month) continue;
+        spent += c.amount_reporting;
+      }
+      continue;
+    }
     if (txn.category_id !== input.category_id) continue;
     if (yearMonthFromIso(txn.posted_at) !== input.year_month) continue;
     spent += budgetSpendDelta(txn, input.category);
@@ -96,6 +123,7 @@ export function buildCategoryBudgetRows(input: {
   budgets: BudgetMonth[];
   transactions: Transaction[];
   year_month: string;
+  split_legs?: SplitLeg[];
 }): CategoryBudgetRow[] {
   const budgetByCat = new Map(
     input.budgets
@@ -114,6 +142,8 @@ export function buildCategoryBudgetRows(input: {
         category_id: category.id,
         year_month: input.year_month,
         category,
+        split_legs: input.split_legs,
+        categories: input.categories,
       });
       const effective = budgeted_amount + rollover_from_prior;
       return {
@@ -136,12 +166,31 @@ export function cumulativeSpendByDay(input: {
   transactions: Transaction[];
   year_month: string;
   categories?: Category[];
+  split_legs?: SplitLeg[];
 }): number[] {
   const days = daysInYearMonth(input.year_month);
   const catMap = new Map((input.categories ?? []).map((c) => [c.id, c]));
   const byDay = new Array<number>(days).fill(0);
+  const legsByTxn = new Map<string, SplitLeg[]>();
+  for (const leg of input.split_legs ?? []) {
+    const arr = legsByTxn.get(leg.transaction_id) ?? [];
+    arr.push(leg);
+    legsByTxn.set(leg.transaction_id, arr);
+  }
 
   for (const txn of input.transactions) {
+    if (txn.is_split_parent) {
+      const day = Number(txn.posted_at.slice(8, 10));
+      for (const c of splitBudgetContributions({
+        parent: txn,
+        legs: legsByTxn.get(txn.id) ?? [],
+        categories: catMap,
+      })) {
+        if (c.year_month !== input.year_month) continue;
+        if (day >= 1 && day <= days) byDay[day - 1]! += c.amount_reporting;
+      }
+      continue;
+    }
     if (yearMonthFromIso(txn.posted_at) !== input.year_month) continue;
     const category = txn.category_id
       ? catMap.get(txn.category_id) ?? null
