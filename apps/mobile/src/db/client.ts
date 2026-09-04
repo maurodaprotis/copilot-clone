@@ -1,5 +1,5 @@
 import * as SQLite from "expo-sqlite";
-import { CLIENT_SCHEMA, seedBudgetRows, seedCategoryGroupRows, seedCategoryRows } from "@copilot-clone/db";
+import { ACCOUNTS_MIGRATE_SQL, CLIENT_SCHEMA, seedBudgetRows, seedCategoryGroupRows, seedCategoryRows } from "@copilot-clone/db";
 import { currentYearMonth, seedFxRates } from "@copilot-clone/domain";
 import {
   DEMO_ACCOUNT_CURRENCY,
@@ -11,8 +11,9 @@ let dbPromise: Promise<LocalDb> | null = null;
 
 async function seedDefaults(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.runAsync(
-    `INSERT OR IGNORE INTO accounts (id, name, currency, type, is_archived)
-     VALUES (?, ?, ?, 'cash', 0)`,
+    `INSERT OR IGNORE INTO accounts (
+       id, name, currency, type, is_archived, include_in_net_worth, current_balance
+     ) VALUES (?, ?, ?, 'cash', 0, 1, 0)`,
     DEMO_ACCOUNT_ID,
     "Cash ARS",
     DEMO_ACCOUNT_CURRENCY,
@@ -90,6 +91,13 @@ export async function getDb(): Promise<LocalDb> {
         );
       } catch {
         // column already exists
+      }
+      for (const sql of ACCOUNTS_MIGRATE_SQL) {
+        try {
+          await db.execAsync(sql);
+        } catch {
+          // column already exists
+        }
       }
       await migrateReviewStatus(db);
       await seedDefaults(db);

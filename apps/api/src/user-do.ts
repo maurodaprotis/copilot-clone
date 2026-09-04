@@ -1,8 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
-import { SERVER_SCHEMA, seedBudgetRows, seedCategoryGroupRows, seedCategoryRows } from "@copilot-clone/db";
+import { ACCOUNTS_MIGRATE_SQL, SERVER_SCHEMA, seedBudgetRows, seedCategoryGroupRows, seedCategoryRows } from "@copilot-clone/db";
 import {
+  buildAccountBalanceRows,
   buildCategoryBudgetRows,
   budgetPaceByDay,
+  computeCashFlowWithPrior,
   cumulativeSpendByDay,
   currentYearMonth,
   deriveAmounts,
@@ -10,6 +12,7 @@ import {
   totalEffectiveBudget,
   normalizeReviewStatus,
   seedFxRates,
+  type Account,
   type BudgetMonth,
   type Category,
   type CategoryGroup,
@@ -23,13 +26,13 @@ export interface Env {
 }
 
 type SyncPushItem = {
-  op?: "upsert" | "review" | "budget_upsert";
+  op?: "upsert" | "review" | "budget_upsert" | "account_upsert";
   id?: string;
   account_id?: string;
   category_id?: string | null;
   amount?: number;
   currency?: string;
-  type?: "regular" | "income" | "transfer";
+  type?: "regular" | "income" | "transfer" | Account["type"];
   is_refund?: boolean;
   /** Accepts legacy "pending" which normalizes to needs_review. */
   review_status?: ReviewStatus | "pending";
@@ -45,6 +48,11 @@ type SyncPushItem = {
   budgeted_amount?: number;
   rollover_mode?: string;
   rollover_from_prior?: number;
+  // account_upsert
+  name?: string;
+  is_archived?: boolean;
+  include_in_net_worth?: boolean;
+  current_balance?: number;
 };
 
 export class UserDO extends DurableObject<Env> {
@@ -53,6 +61,13 @@ export class UserDO extends DurableObject<Env> {
   private async ensureSchema(): Promise<void> {
     if (this.ready) return;
     this.ctx.storage.sql.exec(SERVER_SCHEMA);
+    for (const sql of ACCOUNTS_MIGRATE_SQL) {
+      try {
+        this.ctx.storage.sql.exec(sql);
+      } catch {
+        // column already exists
+      }
+    }
     this.ctx.storage.sql.exec(
       `UPDATE transactions SET review_status = 'needs_review'
        WHERE review_status = 'pending'`,
@@ -110,8 +125,9 @@ export class UserDO extends DurableObject<Env> {
     }
 
     this.ctx.storage.sql.exec(
-      `INSERT OR IGNORE INTO accounts (id, name, currency, type, is_archived)
-       VALUES ('acc-cash-ars', 'Cash ARS', 'ARS', 'cash', 0)`,
+      `INSERT OR IGNORE INTO accounts (
+         id, name, currency, type, is_archived, include_in_net_worth, current_balance
+       ) VALUES ('acc-cash-ars', 'Cash ARS', 'ARS', 'cash', 0, 1, 0)`,
     );
   }
 
@@ -351,6 +367,79 @@ export class UserDO extends DurableObject<Env> {
     return item.id!;
   }
 
+  private listAccounts(): Account[] {
+    return [...this.ctx.storage.sql.exec("SELECT * FROM accounts")].map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+      currency: String(row.currency),
+      type: String(row.type) as Account["type"],
+      is_archived: Number(row.is_archived) === 1,
+      include_in_net_worth:
+        row.include_in_net_worth == null
+          ? true
+          : Number(row.include_in_net_worth) === 1,
+      current_balance: Number(row.current_balance ?? 0),
+    }));
+  }
+
+  private applyAccountUpsert(item: SyncPushItem): string {
+    const id = item.id;
+    if (!id) throw new Error("account_upsert requires id");
+    const name = item.name ?? "Account";
+    const currency = (item.currency ?? "USD").toUpperCase();
+    const type = (item.type as Account["type"] | undefined) ?? "cash";
+    const isArchived = item.is_archived ? 1 : 0;
+    const includeNw = item.include_in_net_worth === false ? 0 : 1;
+    const balance = Number(item.current_balance ?? 0);
+    this.ctx.storage.sql.exec(
+      `INSERT INTO accounts (
+         id, name, currency, type, is_archived, include_in_net_worth, current_balance
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         name = excluded.name,
+         currency = excluded.currency,
+         type = excluded.type,
+         is_archived = excluded.is_archived,
+         include_in_net_worth = excluded.include_in_net_worth,
+         current_balance = excluded.current_balance`,
+      id,
+      name,
+      currency,
+      type,
+      isArchived,
+      includeNw,
+      balance,
+    );
+    return id;
+  }
+
+  private cashFlowPayload(yearMonth: string) {
+    const transactions = this.listTransactionsDomain();
+    return computeCashFlowWithPrior({
+      transactions,
+      year_month: yearMonth,
+      reporting_currency: "USD",
+    });
+  }
+
+  private accountsPayload() {
+    const accounts = this.listAccounts();
+    const transactions = this.listTransactionsDomain();
+    const rateBook = this.loadRateBook();
+    const onDate = new Date().toISOString().slice(0, 10);
+    const built = buildAccountBalanceRows({
+      accounts,
+      transactions,
+      reporting_currency: "USD",
+      on_date: onDate,
+      rate_book: rateBook,
+    });
+    return {
+      ...built,
+      on_date: onDate,
+    };
+  }
+
   private categoriesPayload(yearMonth: string) {
     this.ensureMonthBudgets(yearMonth);
     const groups = this.listGroups();
@@ -465,6 +554,10 @@ export class UserDO extends DurableObject<Env> {
           saved.push(this.applyBudgetUpsert(item));
           continue;
         }
+        if (item.op === "account_upsert") {
+          saved.push(this.applyAccountUpsert(item));
+          continue;
+        }
         saved.push(this.applyUpsert(item, rateBook));
       }
 
@@ -492,6 +585,15 @@ export class UserDO extends DurableObject<Env> {
     if (request.method === "GET" && url.pathname === "/dashboard/spending") {
       const yearMonth = url.searchParams.get("month") ?? currentYearMonth();
       return Response.json(this.spendingPayload(yearMonth));
+    }
+
+    if (request.method === "GET" && url.pathname === "/cash-flow") {
+      const yearMonth = url.searchParams.get("month") ?? currentYearMonth();
+      return Response.json(this.cashFlowPayload(yearMonth));
+    }
+
+    if (request.method === "GET" && url.pathname === "/accounts") {
+      return Response.json(this.accountsPayload());
     }
 
     return new Response("Not found", { status: 404 });
