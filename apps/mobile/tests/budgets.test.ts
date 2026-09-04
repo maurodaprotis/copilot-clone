@@ -55,8 +55,8 @@ async function seedCats(db: ReturnType<typeof createMemoryDb>, ym: string) {
   }
 }
 
-describe("local budgets + pending exclusion", () => {
-  it("pending spend does not count; review then counts", async () => {
+describe("local budgets + needs_review exclusion", () => {
+  it("needs_review spend does not count; review then counts", async () => {
     const db = createMemoryDb();
     const ym = "2026-09";
     await seedCats(db, ym);

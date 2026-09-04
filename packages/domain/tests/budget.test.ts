@@ -62,7 +62,7 @@ describe("budget spent calculation", () => {
     expect(hitsBudget(txn({}), dining)).toBe(true);
   });
 
-  it("pending review_status does NOT hit budgets", () => {
+  it("needs_review does NOT hit budgets", () => {
     const pending = txn({ review_status: "needs_review" });
     expect(hitsBudget(pending, dining)).toBe(false);
     expect(budgetSpendDelta(pending, dining)).toBe(0);
@@ -144,7 +144,7 @@ describe("budget spent calculation", () => {
     expect(rolloverIntoNext("both", 100, 40)).toBe(60);
   });
 
-  it("cumulative spend excludes pending; pace is linear", () => {
+  it("cumulative spend excludes needs_review; pace is linear", () => {
     const rows = [
       txn({
         id: "1",
