@@ -1,15 +1,17 @@
-import { getDb } from "../db/client";
+import type { LocalDb } from "../db/types";
 
-export type SyncTransport = (items: unknown[]) => Promise<{ ok: boolean }>;
+export type SyncTransport = (items: unknown[]) => Promise<{ ok: boolean; saved?: string[] }>;
 
 /**
- * Push pending outbox rows via transport (mock DO call in tests).
- * On success, deletes outbox rows and marks transactions reviewed.
+ * Push pending outbox rows via transport (HTTP in prod, mock in tests).
+ * On success: deletes outbox rows and marks transactions synced=1.
+ * Does NOT change review_status — pending stays in To Review until reviewed.
  */
 export async function syncOutbox(
   transport: SyncTransport,
+  dbOverride?: LocalDb,
 ): Promise<{ pushed: number }> {
-  const db = await getDb();
+  const db = dbOverride ?? (await (await import("../db/client")).getDb());
   const rows = await db.getAllAsync<{
     id: string;
     entity_id: string;
@@ -31,12 +33,13 @@ export async function syncOutbox(
     return { pushed: 0 };
   }
 
+  const now = new Date().toISOString();
   await db.withTransactionAsync(async () => {
     for (const row of rows) {
       await db.runAsync(`DELETE FROM outbox WHERE id = ?`, row.id);
       await db.runAsync(
-        `UPDATE transactions SET review_status = 'reviewed', updated_at = ? WHERE id = ?`,
-        new Date().toISOString(),
+        `UPDATE transactions SET synced = 1, updated_at = ? WHERE id = ?`,
+        now,
         row.entity_id,
       );
     }

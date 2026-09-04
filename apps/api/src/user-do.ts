@@ -12,20 +12,22 @@ export interface Env {
 }
 
 type SyncPushItem = {
+  op?: "upsert" | "review";
   id: string;
-  account_id: string;
+  account_id?: string;
   category_id?: string | null;
-  amount: number;
-  currency: string;
-  type: "regular" | "income" | "transfer";
+  amount?: number;
+  currency?: string;
+  type?: "regular" | "income" | "transfer";
   is_refund?: boolean;
   review_status?: "pending" | "reviewed" | "excluded";
-  posted_at: string;
+  posted_at?: string;
   note?: string | null;
   transfer_pair_id?: string | null;
   fingerprint?: string | null;
-  account_currency: string;
-  reporting_currency: string;
+  account_currency?: string;
+  reporting_currency?: string;
+  updated_at?: string;
 };
 
 export class UserDO extends DurableObject<Env> {
@@ -52,6 +54,17 @@ export class UserDO extends DurableObject<Env> {
     return book;
   }
 
+  private findByFingerprint(fingerprint: string): string | null {
+    const rows = [
+      ...this.ctx.storage.sql.exec(
+        "SELECT id FROM transactions WHERE fingerprint = ? LIMIT 1",
+        fingerprint,
+      ),
+    ];
+    if (rows.length === 0) return null;
+    return String(rows[0]!.id);
+  }
+
   /** Recompute balances from posted transactions (authoritative on DO). */
   balanceForAccount(accountId: string): number {
     const rows = this.ctx.storage.sql.exec(
@@ -70,6 +83,65 @@ export class UserDO extends DurableObject<Env> {
       else balance -= amt;
     }
     return balance;
+  }
+
+  private applyReview(item: SyncPushItem): string {
+    const now = item.updated_at ?? new Date().toISOString();
+    this.ctx.storage.sql.exec(
+      `UPDATE transactions SET review_status = ?, updated_at = ? WHERE id = ?`,
+      item.review_status ?? "reviewed",
+      now,
+      item.id,
+    );
+    return item.id;
+  }
+
+  private applyUpsert(item: SyncPushItem, rateBook: RateBook): string {
+    // Idempotency: same client id wins; same fingerprint maps to existing row.
+    if (item.fingerprint) {
+      const existingId = this.findByFingerprint(item.fingerprint);
+      if (existingId && existingId !== item.id) {
+        return existingId;
+      }
+    }
+
+    const amounts = deriveAmounts({
+      amount: item.amount!,
+      currency: item.currency!,
+      account_currency: item.account_currency!,
+      reporting_currency: item.reporting_currency!,
+      on_date: (item.posted_at ?? new Date().toISOString()).slice(0, 10),
+      rate_book: rateBook,
+    });
+    const now = new Date().toISOString();
+    // Keep pending/needs_review until client sends an explicit review op.
+    const reviewStatus = item.review_status ?? "pending";
+
+    this.ctx.storage.sql.exec(
+      `INSERT OR REPLACE INTO transactions (
+        id, account_id, category_id, amount, currency,
+        amount_account, amount_reporting, type, is_refund,
+        review_status, posted_at, note, transfer_pair_id, fingerprint,
+        synced, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      item.id,
+      item.account_id,
+      item.category_id ?? null,
+      item.amount,
+      item.currency!.toUpperCase(),
+      amounts.amount_account,
+      amounts.amount_reporting,
+      item.type ?? "regular",
+      item.is_refund ? 1 : 0,
+      reviewStatus,
+      item.posted_at,
+      item.note ?? null,
+      item.transfer_pair_id ?? null,
+      item.fingerprint ?? null,
+      now,
+      now,
+    );
+    return item.id;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -104,46 +176,16 @@ export class UserDO extends DurableObject<Env> {
       const saved: string[] = [];
 
       for (const item of body.items ?? []) {
-        const amounts = deriveAmounts({
-          amount: item.amount,
-          currency: item.currency,
-          account_currency: item.account_currency,
-          reporting_currency: item.reporting_currency,
-          on_date: item.posted_at.slice(0, 10),
-          rate_book: rateBook,
-        });
-        const now = new Date().toISOString();
-        this.ctx.storage.sql.exec(
-          `INSERT OR REPLACE INTO transactions (
-            id, account_id, category_id, amount, currency,
-            amount_account, amount_reporting, type, is_refund,
-            review_status, posted_at, note, transfer_pair_id, fingerprint,
-            created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          item.id,
-          item.account_id,
-          item.category_id ?? null,
-          item.amount,
-          item.currency.toUpperCase(),
-          amounts.amount_account,
-          amounts.amount_reporting,
-          item.type,
-          item.is_refund ? 1 : 0,
-          item.review_status ?? "reviewed",
-          item.posted_at,
-          item.note ?? null,
-          item.transfer_pair_id ?? null,
-          item.fingerprint ?? null,
-          now,
-          now,
-        );
-        saved.push(item.id);
+        if (item.op === "review") {
+          saved.push(this.applyReview(item));
+          continue;
+        }
+        saved.push(this.applyUpsert(item, rateBook));
       }
 
       return Response.json({
         ok: true,
         saved,
-        // balances recomputed on DO (sample for first account if present)
         sample_fx: fx_convert(1, "USD", "ARS", "2026-09-01", rateBook),
       });
     }

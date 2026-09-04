@@ -73,3 +73,7 @@ No secrets are committed. Use Wrangler `.dev.vars` locally for Cloudflare; Bette
 ## License
 
 Private scaffold.
+
+## Preview
+
+See [PREVIEW.md](./PREVIEW.md) for Worker URL and offline DoD test steps for Paul.

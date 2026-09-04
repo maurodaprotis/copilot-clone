@@ -3,7 +3,7 @@ import {
   transactionFingerprint,
   type RateBook,
 } from "@copilot-clone/domain";
-import { getDb } from "../db/client";
+import type { LocalDb } from "../db/types";
 
 export type AddExpenseOfflineInput = {
   id?: string;
@@ -19,12 +19,13 @@ export type AddExpenseOfflineInput = {
 };
 
 /**
- * Insert a pending expense locally and enqueue an outbox row for later sync.
+ * Insert a pending / needs_review expense locally and enqueue an outbox row.
  */
 export async function addExpenseOffline(
   input: AddExpenseOfflineInput,
+  dbOverride?: LocalDb,
 ): Promise<{ transactionId: string; outboxId: string }> {
-  const db = await getDb();
+  const db = dbOverride ?? (await (await import("../db/client")).getDb());
   const id = input.id ?? crypto.randomUUID();
   const posted_at = input.posted_at ?? new Date().toISOString();
   const rate_book = input.rate_book ?? {};
@@ -53,8 +54,8 @@ export async function addExpenseOffline(
         id, account_id, category_id, amount, currency,
         amount_account, amount_reporting, type, is_refund,
         review_status, posted_at, note, transfer_pair_id, fingerprint,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'regular', 0, 'pending', ?, ?, NULL, ?, ?, ?)`,
+        synced, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'regular', 0, 'pending', ?, ?, NULL, ?, 0, ?, ?)`,
       id,
       input.account_id,
       input.category_id ?? null,
@@ -70,6 +71,7 @@ export async function addExpenseOffline(
     );
 
     const payload = JSON.stringify({
+      op: "upsert",
       id,
       account_id: input.account_id,
       category_id: input.category_id ?? null,
