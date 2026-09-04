@@ -44,9 +44,7 @@ export function SpendingLineChart({
   return (
     <View style={styles.wrap}>
       <View style={{ width, height }}>
-        {/* @ts-expect-error RN web accepts svg tags */}
         <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-          {/* @ts-expect-error polyline */}
           <polyline
             fill="none"
             stroke="#94a3b8"
@@ -54,7 +52,6 @@ export function SpendingLineChart({
             strokeDasharray="4 4"
             points={paceLine}
           />
-          {/* @ts-expect-error polyline */}
           <polyline
             fill="none"
             stroke="#0d9488"
