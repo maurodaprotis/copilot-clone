@@ -1,19 +1,29 @@
-import type { Transaction } from "./types.js";
+import type { Category, Transaction } from "./types.js";
+import { isNeedsReview } from "./review.js";
 
-/** Posted-only: pending / unposted do not apply to balance. */
+/** Posted-only: TxnStatus=pending never applies. Unreviewed (To Review) also does not. */
 export function appliesToBalance(txn: Transaction): boolean {
-  return txn.review_status !== "pending";
+  if (txn.status === "pending") return false;
+  if (isNeedsReview(txn.review_status)) return false;
+  return txn.review_status !== "excluded";
+}
+
+function isExcluded(txn: Transaction): boolean {
+  if (txn.is_excluded === true) return true;
+  return txn.review_status === "excluded";
 }
 
 /**
- * Regular (expense) non-excluded transactions hit budgets.
- * Income/transfer and excluded/pending do not.
+ * Regular non-excluded hits budgets.
+ * CLONE-SPEC: pending TxnStatus does NOT; income/transfer never; exclude_from_budget never.
+ * Unreviewed (pending / needs_review) also does not — spent rises after Review.
  */
-export function hitsBudget(txn: Transaction): boolean {
+export function hitsBudget(txn: Transaction, category?: Category | null): boolean {
   if (txn.type !== "regular") return false;
-  if (txn.review_status === "excluded" || txn.review_status === "pending") {
-    return false;
-  }
+  if (txn.status === "pending") return false;
+  if (isExcluded(txn)) return false;
+  if (isNeedsReview(txn.review_status)) return false;
+  if (category?.exclude_from_budget) return false;
   return true;
 }
 
@@ -25,6 +35,5 @@ export function signedAmountAccount(txn: Transaction): number {
   const amt = txn.amount_account;
   if (txn.type === "income") return amt;
   if (txn.type === "regular") return txn.is_refund ? amt : -amt;
-  // transfer: caller pairs legs; single leg treated as outflow of amount_account
   return -amt;
 }

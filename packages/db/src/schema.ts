@@ -54,12 +54,49 @@ CREATE TABLE IF NOT EXISTS fx_rates (
 );
 `;
 
+export const CATEGORY_GROUPS_DDL = `
+CREATE TABLE IF NOT EXISTS category_groups (
+  id TEXT PRIMARY KEY NOT NULL,
+  name TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_system INTEGER NOT NULL DEFAULT 0
+);
+`;
+
+export const CATEGORIES_DDL = `
+CREATE TABLE IF NOT EXISTS categories (
+  id TEXT PRIMARY KEY NOT NULL,
+  group_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  emoji TEXT NOT NULL DEFAULT '',
+  color TEXT NOT NULL DEFAULT '#888888',
+  exclude_from_budget INTEGER NOT NULL DEFAULT 0,
+  is_income_category INTEGER NOT NULL DEFAULT 0,
+  archived INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+`;
+
+export const BUDGET_MONTHS_DDL = `
+CREATE TABLE IF NOT EXISTS budget_months (
+  category_id TEXT NOT NULL,
+  year_month TEXT NOT NULL,
+  budgeted_amount REAL NOT NULL DEFAULT 0,
+  rollover_mode TEXT NOT NULL DEFAULT 'off',
+  rollover_from_prior REAL NOT NULL DEFAULT 0,
+  PRIMARY KEY (category_id, year_month)
+);
+`;
+
 /** Client keeps outbox + synced flag; server DO does not rely on synced. */
 export const CLIENT_SCHEMA = [
   TRANSACTIONS_DDL,
   OUTBOX_DDL,
   ACCOUNTS_DDL,
   FX_RATES_DDL,
+  CATEGORY_GROUPS_DDL,
+  CATEGORIES_DDL,
+  BUDGET_MONTHS_DDL,
 ].join("\n");
 
 /** Server schema includes synced column for INSERT compatibility. */
@@ -67,4 +104,7 @@ export const SERVER_SCHEMA = [
   TRANSACTIONS_DDL,
   ACCOUNTS_DDL,
   FX_RATES_DDL,
+  CATEGORY_GROUPS_DDL,
+  CATEGORIES_DDL,
+  BUDGET_MONTHS_DDL,
 ].join("\n");

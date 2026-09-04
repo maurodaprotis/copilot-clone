@@ -1,8 +1,16 @@
 import { DurableObject } from "cloudflare:workers";
-import { SERVER_SCHEMA } from "@copilot-clone/db";
+import { SERVER_SCHEMA, seedBudgetRows, seedCategoryGroupRows, seedCategoryRows } from "@copilot-clone/db";
 import {
+  buildCategoryBudgetRows,
+  budgetPaceByDay,
+  cumulativeSpendByDay,
+  currentYearMonth,
   deriveAmounts,
   fx_convert,
+  totalEffectiveBudget,
+  type BudgetMonth,
+  type Category,
+  type CategoryGroup,
   type RateBook,
   type Transaction,
 } from "@copilot-clone/domain";
@@ -12,15 +20,15 @@ export interface Env {
 }
 
 type SyncPushItem = {
-  op?: "upsert" | "review";
-  id: string;
+  op?: "upsert" | "review" | "budget_upsert";
+  id?: string;
   account_id?: string;
   category_id?: string | null;
   amount?: number;
   currency?: string;
   type?: "regular" | "income" | "transfer";
   is_refund?: boolean;
-  review_status?: "pending" | "reviewed" | "excluded";
+  review_status?: "pending" | "needs_review" | "reviewed" | "excluded";
   posted_at?: string;
   note?: string | null;
   transfer_pair_id?: string | null;
@@ -28,6 +36,11 @@ type SyncPushItem = {
   account_currency?: string;
   reporting_currency?: string;
   updated_at?: string;
+  // budget_upsert
+  year_month?: string;
+  budgeted_amount?: number;
+  rollover_mode?: string;
+  rollover_from_prior?: number;
 };
 
 export class UserDO extends DurableObject<Env> {
@@ -36,7 +49,66 @@ export class UserDO extends DurableObject<Env> {
   private async ensureSchema(): Promise<void> {
     if (this.ready) return;
     this.ctx.storage.sql.exec(SERVER_SCHEMA);
+    this.seedIfEmpty();
     this.ready = true;
+  }
+
+  private seedIfEmpty(): void {
+    const groups = [
+      ...this.ctx.storage.sql.exec("SELECT COUNT(*) AS c FROM category_groups"),
+    ];
+    const count = Number(groups[0]?.c ?? 0);
+    if (count > 0) return;
+
+    for (const g of seedCategoryGroupRows()) {
+      this.ctx.storage.sql.exec(
+        `INSERT OR IGNORE INTO category_groups (id, name, sort_order, is_system)
+         VALUES (?, ?, ?, ?)`,
+        g.id,
+        g.name,
+        g.sort_order,
+        g.is_system,
+      );
+    }
+    for (const c of seedCategoryRows()) {
+      this.ctx.storage.sql.exec(
+        `INSERT OR IGNORE INTO categories (
+          id, group_id, name, emoji, color,
+          exclude_from_budget, is_income_category, archived, sort_order
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        c.id,
+        c.group_id,
+        c.name,
+        c.emoji,
+        c.color,
+        c.exclude_from_budget,
+        c.is_income_category,
+        c.archived,
+        c.sort_order,
+      );
+    }
+    for (const b of seedBudgetRows()) {
+      this.ctx.storage.sql.exec(
+        `INSERT OR IGNORE INTO budget_months (
+          category_id, year_month, budgeted_amount, rollover_mode, rollover_from_prior
+        ) VALUES (?, ?, ?, ?, ?)`,
+        b.category_id,
+        b.year_month,
+        b.budgeted_amount,
+        b.rollover_mode,
+        b.rollover_from_prior,
+      );
+    }
+
+    // Demo cash account + FX so reporting math works.
+    this.ctx.storage.sql.exec(
+      `INSERT OR IGNORE INTO accounts (id, name, currency, type, is_archived)
+       VALUES ('acc-cash-ars', 'Cash ARS', 'ARS', 'cash', 0)`,
+    );
+    this.ctx.storage.sql.exec(
+      `INSERT OR IGNORE INTO fx_rates (from_currency, to_currency, on_date, rate)
+       VALUES ('USD', 'ARS', '2026-09-01', 1400)`,
+    );
   }
 
   private loadRateBook(): RateBook {
@@ -65,6 +137,91 @@ export class UserDO extends DurableObject<Env> {
     return String(rows[0]!.id);
   }
 
+  private listCategories(): Category[] {
+    return [...this.ctx.storage.sql.exec("SELECT * FROM categories")].map(
+      (row) => ({
+        id: String(row.id),
+        group_id: String(row.group_id),
+        name: String(row.name),
+        emoji: String(row.emoji ?? ""),
+        color: String(row.color ?? "#888888"),
+        exclude_from_budget: Number(row.exclude_from_budget) === 1,
+        is_income_category: Number(row.is_income_category) === 1,
+        archived: Number(row.archived) === 1,
+        sort_order: Number(row.sort_order ?? 0),
+      }),
+    );
+  }
+
+  private listGroups(): CategoryGroup[] {
+    return [
+      ...this.ctx.storage.sql.exec(
+        "SELECT * FROM category_groups ORDER BY sort_order ASC",
+      ),
+    ].map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+      sort_order: Number(row.sort_order ?? 0),
+      is_system: Number(row.is_system) === 1,
+    }));
+  }
+
+  private listBudgets(yearMonth?: string): BudgetMonth[] {
+    const rows = yearMonth
+      ? [
+          ...this.ctx.storage.sql.exec(
+            "SELECT * FROM budget_months WHERE year_month = ?",
+            yearMonth,
+          ),
+        ]
+      : [...this.ctx.storage.sql.exec("SELECT * FROM budget_months")];
+    return rows.map((row) => ({
+      category_id: String(row.category_id),
+      year_month: String(row.year_month),
+      budgeted_amount: Number(row.budgeted_amount),
+      rollover_mode: (String(row.rollover_mode) || "off") as BudgetMonth["rollover_mode"],
+      rollover_from_prior: Number(row.rollover_from_prior ?? 0),
+    }));
+  }
+
+  private listTransactionsDomain(): Transaction[] {
+    return [...this.ctx.storage.sql.exec("SELECT * FROM transactions")].map(
+      (row) => ({
+        id: String(row.id),
+        account_id: String(row.account_id),
+        category_id: row.category_id == null ? null : String(row.category_id),
+        amount: Number(row.amount),
+        currency: String(row.currency),
+        amount_account: Number(row.amount_account),
+        amount_reporting: Number(row.amount_reporting),
+        type: String(row.type) as Transaction["type"],
+        is_refund: Number(row.is_refund) === 1,
+        review_status: String(row.review_status) as Transaction["review_status"],
+        status: "posted",
+        posted_at: String(row.posted_at),
+        note: row.note == null ? null : String(row.note),
+        transfer_pair_id:
+          row.transfer_pair_id == null ? null : String(row.transfer_pair_id),
+        fingerprint: row.fingerprint == null ? null : String(row.fingerprint),
+      }),
+    );
+  }
+
+  private ensureMonthBudgets(yearMonth: string): void {
+    for (const b of seedBudgetRows(yearMonth)) {
+      this.ctx.storage.sql.exec(
+        `INSERT OR IGNORE INTO budget_months (
+          category_id, year_month, budgeted_amount, rollover_mode, rollover_from_prior
+        ) VALUES (?, ?, ?, ?, ?)`,
+        b.category_id,
+        b.year_month,
+        b.budgeted_amount,
+        b.rollover_mode,
+        b.rollover_from_prior,
+      );
+    }
+  }
+
   /** Recompute balances from posted transactions (authoritative on DO). */
   balanceForAccount(accountId: string): number {
     const rows = this.ctx.storage.sql.exec(
@@ -74,7 +231,7 @@ export class UserDO extends DurableObject<Env> {
     );
     let balance = 0;
     for (const row of rows) {
-      if (String(row.review_status) === "pending") continue;
+      if (String(row.review_status) === "pending" || String(row.review_status) === "needs_review") continue;
       const amt = Number(row.amount_account);
       const type = String(row.type);
       const isRefund = Number(row.is_refund) === 1;
@@ -93,7 +250,31 @@ export class UserDO extends DurableObject<Env> {
       now,
       item.id,
     );
-    return item.id;
+    return item.id!;
+  }
+
+  private applyBudgetUpsert(item: SyncPushItem): string {
+    const categoryId = item.category_id;
+    const yearMonth = item.year_month ?? currentYearMonth();
+    if (!categoryId) throw new Error("budget_upsert requires category_id");
+    const budgeted = Number(item.budgeted_amount ?? 0);
+    const mode = item.rollover_mode ?? "off";
+    const rollover = Number(item.rollover_from_prior ?? 0);
+    this.ctx.storage.sql.exec(
+      `INSERT INTO budget_months (
+        category_id, year_month, budgeted_amount, rollover_mode, rollover_from_prior
+      ) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(category_id, year_month) DO UPDATE SET
+        budgeted_amount = excluded.budgeted_amount,
+        rollover_mode = excluded.rollover_mode,
+        rollover_from_prior = excluded.rollover_from_prior`,
+      categoryId,
+      yearMonth,
+      budgeted,
+      mode,
+      rollover,
+    );
+    return `${categoryId}:${yearMonth}`;
   }
 
   private applyUpsert(item: SyncPushItem, rateBook: RateBook): string {
@@ -141,7 +322,66 @@ export class UserDO extends DurableObject<Env> {
       now,
       now,
     );
-    return item.id;
+    return item.id!;
+  }
+
+  private categoriesPayload(yearMonth: string) {
+    this.ensureMonthBudgets(yearMonth);
+    const groups = this.listGroups();
+    const categories = this.listCategories();
+    const budgets = this.listBudgets(yearMonth);
+    const transactions = this.listTransactionsDomain();
+    const rows = buildCategoryBudgetRows({
+      categories,
+      budgets,
+      transactions,
+      year_month: yearMonth,
+    });
+    return {
+      year_month: yearMonth,
+      reporting_currency: "USD",
+      groups,
+      categories,
+      budgets,
+      rows,
+      totals: {
+        budgeted: totalEffectiveBudget(rows),
+        spent: rows
+          .filter((r) => !r.category.exclude_from_budget)
+          .reduce((s, r) => s + r.spent, 0),
+        remaining: rows
+          .filter((r) => !r.category.exclude_from_budget)
+          .reduce((s, r) => s + r.remaining, 0),
+      },
+    };
+  }
+
+  private spendingPayload(yearMonth: string) {
+    this.ensureMonthBudgets(yearMonth);
+    const categories = this.listCategories();
+    const budgets = this.listBudgets(yearMonth);
+    const transactions = this.listTransactionsDomain();
+    const rows = buildCategoryBudgetRows({
+      categories,
+      budgets,
+      transactions,
+      year_month: yearMonth,
+    });
+    const totalBudget = totalEffectiveBudget(rows);
+    const cumulative = cumulativeSpendByDay({
+      transactions,
+      year_month: yearMonth,
+      categories,
+    });
+    const pace = budgetPaceByDay(totalBudget, yearMonth);
+    return {
+      year_month: yearMonth,
+      reporting_currency: "USD",
+      total_budget: totalBudget,
+      cumulative_spend: cumulative,
+      budget_pace: pace,
+      spent_mtd: cumulative[cumulative.length - 1] ?? 0,
+    };
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -180,6 +420,10 @@ export class UserDO extends DurableObject<Env> {
           saved.push(this.applyReview(item));
           continue;
         }
+        if (item.op === "budget_upsert") {
+          saved.push(this.applyBudgetUpsert(item));
+          continue;
+        }
         saved.push(this.applyUpsert(item, rateBook));
       }
 
@@ -197,6 +441,21 @@ export class UserDO extends DurableObject<Env> {
         ),
       ];
       return Response.json({ transactions: rows });
+    }
+
+    if (request.method === "GET" && url.pathname === "/categories") {
+      const yearMonth = url.searchParams.get("month") ?? currentYearMonth();
+      return Response.json(this.categoriesPayload(yearMonth));
+    }
+
+    if (request.method === "GET" && url.pathname === "/budgets") {
+      const yearMonth = url.searchParams.get("month") ?? currentYearMonth();
+      return Response.json(this.categoriesPayload(yearMonth));
+    }
+
+    if (request.method === "GET" && url.pathname === "/dashboard/spending") {
+      const yearMonth = url.searchParams.get("month") ?? currentYearMonth();
+      return Response.json(this.spendingPayload(yearMonth));
     }
 
     return new Response("Not found", { status: 404 });

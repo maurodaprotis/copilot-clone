@@ -13,9 +13,12 @@ import {
   listToReview,
   type LocalTransaction,
 } from "../../src/offline/queries";
+import { getSpendingLine } from "../../src/offline/budgets";
 import { reviewTransaction } from "../../src/offline/reviewTransaction";
 import { syncOutbox } from "../../src/offline/syncOutbox";
 import { createApiTransport } from "../../src/sync/apiTransport";
+import { pullCategoriesFromApi } from "../../src/sync/pullCategories";
+import { SpendingLineChart } from "../../src/components/SpendingLineChart";
 import { API_URL } from "../../src/config";
 
 function formatMoney(amount: number, currency: string): string {
@@ -27,12 +30,24 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [spend, setSpend] = useState<{
+    year_month: string;
+    total_budget: number;
+    cumulative_spend: number[];
+    budget_pace: number[];
+    spent_mtd: number;
+  } | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const rows = await listToReview();
+      await pullCategoriesFromApi().catch(() => false);
+      const [rows, line] = await Promise.all([
+        listToReview(),
+        getSpendingLine(),
+      ]);
       setItems(rows);
+      setSpend(line);
     } finally {
       setLoading(false);
     }
@@ -49,6 +64,7 @@ export default function DashboardScreen() {
     setStatus(null);
     try {
       const result = await syncOutbox(createApiTransport());
+      await pullCategoriesFromApi();
       setStatus(
         result.pushed > 0
           ? `Synced ${result.pushed} item(s) to ${API_URL}`
@@ -81,7 +97,29 @@ export default function DashboardScreen() {
       }
     >
       <Text style={styles.title}>Dashboard</Text>
-      <Text style={styles.sub}>To Review — local SQLite (pending)</Text>
+      <Text style={styles.sub}>
+        Spending line (posted reviewed Regular) · pending excluded
+      </Text>
+
+      <View style={styles.chartCard}>
+        <Text style={styles.chartTitle}>
+          Spending · {spend?.year_month ?? "…"} · USD
+        </Text>
+        <Text style={styles.chartMeta}>
+          MTD ${spend?.spent_mtd.toFixed(0) ?? "0"} of $
+          {spend?.total_budget.toFixed(0) ?? "0"} budget
+        </Text>
+        {spend ? (
+          <SpendingLineChart
+            cumulative={spend.cumulative_spend}
+            pace={spend.budget_pace}
+            width={300}
+            height={150}
+          />
+        ) : (
+          <ActivityIndicator />
+        )}
+      </View>
 
       <View style={styles.row}>
         <Pressable style={styles.btn} onPress={() => void onSync()} disabled={syncing}>
@@ -95,9 +133,7 @@ export default function DashboardScreen() {
 
       {status ? <Text style={styles.status}>{status}</Text> : null}
 
-      <Text style={styles.section}>
-        To Review ({items.length})
-      </Text>
+      <Text style={styles.section}>To Review ({items.length})</Text>
 
       {items.length === 0 && !loading ? (
         <Text style={styles.empty}>
@@ -130,6 +166,16 @@ const styles = StyleSheet.create({
   container: { padding: 20, paddingBottom: 48 },
   title: { fontSize: 24, fontWeight: "700", marginBottom: 4 },
   sub: { color: "#666", marginBottom: 16 },
+  chartCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#e2e2e6",
+  },
+  chartTitle: { fontSize: 16, fontWeight: "700", marginBottom: 2 },
+  chartMeta: { color: "#666", fontSize: 12, marginBottom: 10 },
   row: { flexDirection: "row", marginBottom: 12 },
   btn: {
     backgroundColor: "#1a1a2e",

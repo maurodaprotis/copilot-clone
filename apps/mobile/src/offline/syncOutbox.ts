@@ -14,9 +14,10 @@ export async function syncOutbox(
   const db = dbOverride ?? (await (await import("../db/client")).getDb());
   const rows = await db.getAllAsync<{
     id: string;
+    entity_type: string;
     entity_id: string;
     payload: string;
-  }>("SELECT id, entity_id, payload FROM outbox ORDER BY created_at ASC");
+  }>("SELECT id, entity_type, entity_id, payload FROM outbox ORDER BY created_at ASC");
 
   if (rows.length === 0) return { pushed: 0 };
 
@@ -37,11 +38,16 @@ export async function syncOutbox(
   await db.withTransactionAsync(async () => {
     for (const row of rows) {
       await db.runAsync(`DELETE FROM outbox WHERE id = ?`, row.id);
-      await db.runAsync(
-        `UPDATE transactions SET synced = 1, updated_at = ? WHERE id = ?`,
-        now,
-        row.entity_id,
-      );
+      if (
+        row.entity_type === "transaction" ||
+        row.entity_type === "transaction_review"
+      ) {
+        await db.runAsync(
+          `UPDATE transactions SET synced = 1, updated_at = ? WHERE id = ?`,
+          now,
+          row.entity_id,
+        );
+      }
     }
   });
 

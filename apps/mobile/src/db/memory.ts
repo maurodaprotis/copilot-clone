@@ -4,20 +4,26 @@ type Row = Record<string, SqlValue>;
 
 /**
  * Tiny in-memory stand-in for offline sync unit tests.
- * Handles the SQL shapes used by add / sync / review / queries.
+ * Handles the SQL shapes used by add / sync / review / queries / budgets.
  */
 export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string, Row>> } {
   const tables: Record<string, Map<string, Row>> = {
     transactions: new Map(),
     outbox: new Map(),
     accounts: new Map(),
+    category_groups: new Map(),
+    categories: new Map(),
+    budget_months: new Map(),
   };
+
+  function budgetKey(categoryId: string, yearMonth: string): string {
+    return `${categoryId}|${yearMonth}`;
+  }
 
   async function runAsync(sql: string, ...p: SqlValue[]): Promise<unknown> {
     const s = sql.replace(/\s+/g, " ").trim();
 
     if (s.startsWith("INSERT INTO transactions")) {
-      // (?, ?, ?, ?, ?, ?, ?, 'regular', 0, 'pending', ?, ?, NULL, ?, 0, ?, ?)
       const row: Row = {
         id: p[0] as string,
         account_id: p[1] as string,
@@ -42,7 +48,6 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
     }
 
     if (s.startsWith("INSERT INTO outbox")) {
-      // Supports VALUES (?, "transaction", ?, ?, ?, 0, NULL) or fully parameterized.
       const lit = s.match(/VALUES \(\?, \x27([^\x27]+)\x27,/);
       let row: Row;
       if (lit) {
@@ -84,6 +89,53 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
       return { changes: 1 };
     }
 
+    if (
+      s.startsWith("INSERT OR IGNORE INTO category_groups") ||
+      s.startsWith("INSERT OR REPLACE INTO category_groups")
+    ) {
+      tables.category_groups.set(String(p[0]), {
+        id: p[0] as string,
+        name: p[1] as string,
+        sort_order: p[2] as number,
+        is_system: p[3] as number,
+      });
+      return { changes: 1 };
+    }
+
+    if (
+      s.startsWith("INSERT OR IGNORE INTO categories") ||
+      s.startsWith("INSERT OR REPLACE INTO categories")
+    ) {
+      tables.categories.set(String(p[0]), {
+        id: p[0] as string,
+        group_id: p[1] as string,
+        name: p[2] as string,
+        emoji: p[3] as string,
+        color: p[4] as string,
+        exclude_from_budget: p[5] as number,
+        is_income_category: p[6] as number,
+        archived: p[7] as number,
+        sort_order: p[8] as number,
+      });
+      return { changes: 1 };
+    }
+
+    if (
+      s.startsWith("INSERT OR IGNORE INTO budget_months") ||
+      s.startsWith("INSERT OR REPLACE INTO budget_months") ||
+      s.startsWith("INSERT INTO budget_months")
+    ) {
+      const key = budgetKey(String(p[0]), String(p[1]));
+      tables.budget_months.set(key, {
+        category_id: p[0] as string,
+        year_month: p[1] as string,
+        budgeted_amount: p[2] as number,
+        rollover_mode: p[3] as string,
+        rollover_from_prior: p[4] as number,
+      });
+      return { changes: 1 };
+    }
+
     if (s.startsWith("DELETE FROM outbox WHERE id =")) {
       tables.outbox.delete(String(p[0]));
       return { changes: 1 };
@@ -120,7 +172,7 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
     throw new Error(`memory db unsupported SQL: ${s}`);
   }
 
-  async function getAllAsync<T>(sql: string, ..._p: SqlValue[]): Promise<T[]> {
+  async function getAllAsync<T>(sql: string, ...p: SqlValue[]): Promise<T[]> {
     const s = sql.replace(/\s+/g, " ").trim();
 
     if (s.includes("FROM outbox")) {
@@ -129,7 +181,27 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
       ) as T[];
     }
 
-    if (s.includes("review_status = 'pending'")) {
+    if (s.includes("FROM category_groups")) {
+      return [...tables.category_groups.values()].sort(
+        (a, b) => Number(a.sort_order) - Number(b.sort_order),
+      ) as T[];
+    }
+
+    if (s.includes("FROM categories")) {
+      return [...tables.categories.values()].sort(
+        (a, b) => Number(a.sort_order) - Number(b.sort_order),
+      ) as T[];
+    }
+
+    if (s.includes("FROM budget_months")) {
+      let rows = [...tables.budget_months.values()];
+      if (s.includes("WHERE year_month")) {
+        rows = rows.filter((r) => r.year_month === p[0]);
+      }
+      return rows as T[];
+    }
+
+    if (s.includes("review_status") && (s.includes("'pending'") || s.includes("'needs_review'")) && s.includes("WHERE")) {
       return [...tables.transactions.values()]
         .filter((r) => r.review_status === "pending")
         .sort((a, b) => String(b.posted_at).localeCompare(String(a.posted_at))) as T[];
