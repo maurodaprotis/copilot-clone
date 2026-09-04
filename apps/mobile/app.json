@@ -16,6 +16,9 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "apiUrl": "https://copilot-clone-api.maurodaprotis.workers.dev"
     }
   }
 }

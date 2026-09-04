@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { UserDO, type Env } from "./user-do";
 
 export { UserDO };
@@ -8,6 +9,15 @@ type AppEnv = {
 };
 
 const app = new Hono<AppEnv>();
+
+app.use(
+  "*",
+  cors({
+    origin: "*",
+    allowMethods: ["GET", "POST", "OPTIONS"],
+    allowHeaders: ["Content-Type", "x-user-id"],
+  }),
+);
 
 app.get("/health", (c) => c.json({ ok: true, service: "copilot-clone-api" }));
 
@@ -25,9 +35,7 @@ app.post("/auth/sign-in", (c) =>
   c.json({ ok: false, stub: true, message: "Better Auth sign-in stub" }, 501),
 );
 
-app.post("/auth/sign-out", (c) =>
-  c.json({ ok: true, stub: true }),
-);
+app.post("/auth/sign-out", (c) => c.json({ ok: true, stub: true }));
 
 function userStubId(c: { req: { header: (n: string) => string | undefined } }): string {
   return c.req.header("x-user-id") ?? "demo-user";
@@ -49,7 +57,23 @@ app.post("/sync", async (c) => {
   });
   return new Response(res.body, {
     status: res.status,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "access-control-allow-origin": "*",
+    },
+  });
+});
+
+app.get("/transactions", async (c) => {
+  const userId = userStubId(c);
+  const stub = doStub(c.env, userId);
+  const res = await stub.fetch("https://do/transactions");
+  return new Response(res.body, {
+    status: res.status,
+    headers: {
+      "content-type": "application/json",
+      "access-control-allow-origin": "*",
+    },
   });
 });
 
@@ -59,7 +83,10 @@ app.get("/do/health", async (c) => {
   const res = await stub.fetch("https://do/health");
   return new Response(res.body, {
     status: res.status,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "access-control-allow-origin": "*",
+    },
   });
 });
 

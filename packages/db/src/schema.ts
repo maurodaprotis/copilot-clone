@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   note TEXT,
   transfer_pair_id TEXT,
   fingerprint TEXT,
+  synced INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -53,6 +54,7 @@ CREATE TABLE IF NOT EXISTS fx_rates (
 );
 `;
 
+/** Client keeps outbox + synced flag; server DO does not rely on synced. */
 export const CLIENT_SCHEMA = [
   TRANSACTIONS_DDL,
   OUTBOX_DDL,
@@ -60,6 +62,7 @@ export const CLIENT_SCHEMA = [
   FX_RATES_DDL,
 ].join("\n");
 
+/** Server schema includes synced column for INSERT compatibility. */
 export const SERVER_SCHEMA = [
   TRANSACTIONS_DDL,
   ACCOUNTS_DDL,
