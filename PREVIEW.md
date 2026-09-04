@@ -24,14 +24,15 @@ node apps/mobile/scripts/deploy-pages.mjs
 
 1. Open **https://copilot-clone.pages.dev** in Chrome/Edge/Firefox (desktop).
 2. Use Cash Flow / Categories / Transactions / More.
-3. More → Settings / Import CSV as in the click-test below.
+3. More → Recurrings / Settings / Import CSV as in the click-test below.
 4. Durable data: use Sync against the Worker API (local SQLite on web is best-effort).
 
-## API surface (Settings / FX / CSV import)
+## API surface (Settings / FX / CSV import / Recurrings)
 
 - **Settings:** GET|POST /settings — reporting_currency (USD default), default_fx_series (official|parallel|custom), timezone/locale stubs
 - **FX:** GET /fx?rate_book= · POST /fx `{base,quote,as_of,rate,rate_book}` · POST /fx/delete
 - **Imports:** POST /imports `{csv_text,account_id}` → mapping → POST /imports/:id/mapping → ready_review → POST /imports/:id/commit → needs_review · POST /imports/:id/undo soft-delete stub
+- **Recurrings:** GET /recurrings?within_days=14 → `{recurrings, upcoming}` · sync op `recurring_upsert` (name, kind expense|income|reimbursement, cadence, expected_amount, currency, category_id, account_id, next_expected_date, active) · reviewing a txn may advance matched recurring’s next_expected_date
 - Sync / Categories / Cash Flow / Accounts / Rules / Tags / Splits unchanged
 
 ## Naming
@@ -40,6 +41,7 @@ node apps/mobile/scripts/deploy-pages.mjs
 - AccountType: credit_card | depository | investment | loan | other | real_estate
 - FxRate.rate_book: official | parallel | custom
 - ImportJob status: uploaded | parsing | mapping | ready_review | committed | failed
+- RecurringKind: expense | income | reimbursement · Cadence: weekly | biweekly | monthly | quarterly | yearly
 
 ## Click-test (Paul)
 
@@ -52,5 +54,10 @@ node apps/mobile/scripts/deploy-pages.mjs
 2. Pick account → **1. Upload / parse** → confirm mapping → **2. Apply mapping**.
 3. **3. Commit → needs_review** → open **Transactions** / To Review; re-import skips duplicates via fingerprint.
 4. Optional **Undo** soft-deletes created txns.
+
+### Recurrings + Upcoming bills
+1. **More → Recurrings:** create a template (e.g. Netflix · expense · monthly · amount · next_expected_date within 14 days) → Sync.
+2. **Dashboard → Upcoming bills:** shows active recurrings with `next_expected_date` within 14 days.
+3. Optional: add/import a matching txn (same name+amount currency), mark **Review**ed — heuristic match advances `next_expected_date` by cadence.
 
 No Plaid/Postgres. needs_review preserved.

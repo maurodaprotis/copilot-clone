@@ -38,6 +38,7 @@ export default function RootLayout() {
         <Stack.Screen name="import" options={{ title: "Import CSV" }} />
         <Stack.Screen name="rules" options={{ title: "Name Rules" }} />
         <Stack.Screen name="tags" options={{ title: "Tags" }} />
+        <Stack.Screen name="recurrings" options={{ title: "Recurrings" }} />
       </Stack>
     </>
   );

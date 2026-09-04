@@ -111,6 +111,12 @@ app.get("/splits", async (c) => {
   return proxyDo(c, `/splits${q}`);
 });
 
+app.get("/recurrings", async (c) => {
+  const within = c.req.query("within_days");
+  const q = within ? `?within_days=${encodeURIComponent(within)}` : "";
+  return proxyDo(c, `/recurrings${q}`);
+});
+
 
 app.get("/settings", async (c) => proxyDo(c, "/settings"));
 

@@ -6,10 +6,14 @@ export default function MoreScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>More</Text>
-      <Text style={styles.sub}>Accounts, settings, import, rules, tags</Text>
+      <Text style={styles.sub}>Accounts, recurrings, settings, import, rules, tags</Text>
       <Pressable style={styles.row} onPress={() => router.push("/accounts")}>
         <Text style={styles.rowTitle}>Accounts</Text>
         <Text style={styles.rowHint}>Manual accounts by type · balances · net worth</Text>
+      </Pressable>
+      <Pressable style={styles.row} onPress={() => router.push("/recurrings")}>
+        <Text style={styles.rowTitle}>Recurrings</Text>
+        <Text style={styles.rowHint}>Bills / income templates · next_expected_date · match reviewed txns</Text>
       </Pressable>
       <Pressable style={styles.row} onPress={() => router.push("/settings")}>
         <Text style={styles.rowTitle}>Settings</Text>

@@ -231,3 +231,28 @@ export interface ImportRow {
   result_entity_id: string | null;
   row_index: number;
 }
+
+export type RecurringKind = "expense" | "income" | "reimbursement";
+
+export type RecurringCadence =
+  | "weekly"
+  | "biweekly"
+  | "monthly"
+  | "quarterly"
+  | "yearly";
+
+/** Recurring template (bills / income / reimbursements). */
+export interface Recurring {
+  id: string;
+  name: string;
+  kind: RecurringKind;
+  cadence: RecurringCadence;
+  expected_amount: number;
+  currency: string;
+  category_id: string | null;
+  account_id: string | null;
+  /** YYYY-MM-DD — next expected occurrence. */
+  next_expected_date: string;
+  active: boolean;
+  updated_at: string;
+}
