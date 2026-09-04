@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { ACCOUNTS_MIGRATE_SQL, SERVER_SCHEMA, seedBudgetRows, seedCategoryGroupRows, seedCategoryRows } from "@copilot-clone/db";
 import {
+  balanceDeltaForTxn,
   buildAccountBalanceRows,
   buildCategoryBudgetRows,
   budgetPaceByDay,
@@ -9,9 +10,11 @@ import {
   currentYearMonth,
   deriveAmounts,
   fx_convert,
-  totalEffectiveBudget,
+  normalizeAccountType,
   normalizeReviewStatus,
+  recomputeBalanceFromOpeningAndTxns,
   seedFxRates,
+  totalEffectiveBudget,
   type Account,
   type BudgetMonth,
   type Category,
@@ -74,6 +77,7 @@ export class UserDO extends DurableObject<Env> {
     );
     this.seedIfEmpty();
     this.seedFxIfNeeded();
+    this.migrateAccountTypesAndBalances();
     this.ready = true;
   }
 
@@ -127,7 +131,7 @@ export class UserDO extends DurableObject<Env> {
     this.ctx.storage.sql.exec(
       `INSERT OR IGNORE INTO accounts (
          id, name, currency, type, is_archived, include_in_net_worth, current_balance
-       ) VALUES ('acc-cash-ars', 'Cash ARS', 'ARS', 'cash', 0, 1, 0)`,
+       ) VALUES ('acc-cash-ars', 'Cash ARS', 'ARS', 'other', 0, 1, 0)`,
     );
   }
 
@@ -150,6 +154,81 @@ export class UserDO extends DurableObject<Env> {
         row.rate,
       );
     }
+  }
+
+  /** Spec AccountType + fold opening+txn deltas into persisted current_balance once. */
+  private migrateAccountTypesAndBalances(): void {
+    this.ctx.storage.sql.exec(
+      `CREATE TABLE IF NOT EXISTS _migrations (id TEXT PRIMARY KEY)`,
+    );
+    this.ctx.storage.sql.exec(
+      `UPDATE accounts SET type = 'other' WHERE type = 'cash'`,
+    );
+    this.ctx.storage.sql.exec(
+      `UPDATE accounts SET type = 'depository' WHERE type = 'bank'`,
+    );
+    this.ctx.storage.sql.exec(
+      `UPDATE accounts SET type = 'credit_card' WHERE type = 'credit'`,
+    );
+
+    const done = [
+      ...this.ctx.storage.sql.exec(
+        `SELECT 1 AS ok FROM _migrations WHERE id = 'acct_bal_v2' LIMIT 1`,
+      ),
+    ];
+    if (done.length > 0) return;
+
+    const accounts = this.listAccounts();
+    const transactions = this.listTransactionsDomain();
+    for (const account of accounts) {
+      const bal = recomputeBalanceFromOpeningAndTxns(account, transactions);
+      this.ctx.storage.sql.exec(
+        `UPDATE accounts SET current_balance = ? WHERE id = ?`,
+        bal,
+        account.id,
+      );
+    }
+    this.ctx.storage.sql.exec(
+      `INSERT OR IGNORE INTO _migrations (id) VALUES ('acct_bal_v2')`,
+    );
+  }
+
+  private applyAccountBalanceDelta(accountId: string, delta: number): void {
+    if (!accountId || delta === 0) return;
+    this.ctx.storage.sql.exec(
+      `UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?`,
+      delta,
+      accountId,
+    );
+  }
+
+  private loadTxnDomainById(id: string): Transaction | null {
+    const rows = [
+      ...this.ctx.storage.sql.exec(
+        `SELECT * FROM transactions WHERE id = ? LIMIT 1`,
+        id,
+      ),
+    ];
+    if (rows.length === 0) return null;
+    const row = rows[0]!;
+    return {
+      id: String(row.id),
+      account_id: String(row.account_id),
+      category_id: row.category_id == null ? null : String(row.category_id),
+      amount: Number(row.amount),
+      currency: String(row.currency),
+      amount_account: Number(row.amount_account),
+      amount_reporting: Number(row.amount_reporting),
+      type: String(row.type) as Transaction["type"],
+      is_refund: Number(row.is_refund) === 1,
+      review_status: String(row.review_status) as Transaction["review_status"],
+      status: "posted",
+      posted_at: String(row.posted_at),
+      note: row.note == null ? null : String(row.note),
+      transfer_pair_id:
+        row.transfer_pair_id == null ? null : String(row.transfer_pair_id),
+      fingerprint: row.fingerprint == null ? null : String(row.fingerprint),
+    };
   }
 
   private loadRateBook(): RateBook {
@@ -264,36 +343,33 @@ export class UserDO extends DurableObject<Env> {
     }
   }
 
-  /** Recompute balances from posted transactions (authoritative on DO). */
+  /** Persisted account.current_balance (authoritative on DO). */
   balanceForAccount(accountId: string): number {
-    const rows = this.ctx.storage.sql.exec(
-      `SELECT amount_account, type, is_refund, review_status
-       FROM transactions WHERE account_id = ?`,
-      accountId,
-    );
-    let balance = 0;
-    for (const row of rows) {
-      const review = normalizeReviewStatus(String(row.review_status));
-      if (review === "needs_review") continue;
-      const amt = Number(row.amount_account);
-      const type = String(row.type);
-      const isRefund = Number(row.is_refund) === 1;
-      if (type === "income") balance += amt;
-      else if (type === "regular") balance += isRefund ? amt : -amt;
-      else balance -= amt;
-    }
-    return balance;
+    const rows = [
+      ...this.ctx.storage.sql.exec(
+        `SELECT current_balance FROM accounts WHERE id = ? LIMIT 1`,
+        accountId,
+      ),
+    ];
+    if (rows.length === 0) return 0;
+    return Number(rows[0]!.current_balance ?? 0);
   }
 
   private applyReview(item: SyncPushItem): string {
     const now = item.updated_at ?? new Date().toISOString();
     const status = normalizeReviewStatus(item.review_status ?? "reviewed");
+    const before = item.id ? this.loadTxnDomainById(item.id) : null;
     this.ctx.storage.sql.exec(
       `UPDATE transactions SET review_status = ?, updated_at = ? WHERE id = ?`,
       status,
       now,
       item.id,
     );
+    const after = item.id ? this.loadTxnDomainById(item.id) : null;
+    if (before && after) {
+      const delta = balanceDeltaForTxn(after) - balanceDeltaForTxn(before);
+      this.applyAccountBalanceDelta(after.account_id, delta);
+    }
     return item.id!;
   }
 
@@ -339,6 +415,7 @@ export class UserDO extends DurableObject<Env> {
     });
     const now = new Date().toISOString();
     const reviewStatus = normalizeReviewStatus(item.review_status ?? "needs_review");
+    const before = item.id ? this.loadTxnDomainById(item.id) : null;
 
     this.ctx.storage.sql.exec(
       `INSERT OR REPLACE INTO transactions (
@@ -364,6 +441,14 @@ export class UserDO extends DurableObject<Env> {
       now,
       now,
     );
+
+    const after = item.id ? this.loadTxnDomainById(item.id) : null;
+    if (before) {
+      this.applyAccountBalanceDelta(before.account_id, -balanceDeltaForTxn(before));
+    }
+    if (after) {
+      this.applyAccountBalanceDelta(after.account_id, balanceDeltaForTxn(after));
+    }
     return item.id!;
   }
 
@@ -372,7 +457,7 @@ export class UserDO extends DurableObject<Env> {
       id: String(row.id),
       name: String(row.name),
       currency: String(row.currency),
-      type: String(row.type) as Account["type"],
+      type: normalizeAccountType(String(row.type)),
       is_archived: Number(row.is_archived) === 1,
       include_in_net_worth:
         row.include_in_net_worth == null
@@ -387,7 +472,7 @@ export class UserDO extends DurableObject<Env> {
     if (!id) throw new Error("account_upsert requires id");
     const name = item.name ?? "Account";
     const currency = (item.currency ?? "USD").toUpperCase();
-    const type = (item.type as Account["type"] | undefined) ?? "cash";
+    const type = normalizeAccountType(item.type as string | undefined);
     const isArchived = item.is_archived ? 1 : 0;
     const includeNw = item.include_in_net_worth === false ? 0 : 1;
     const balance = Number(item.current_balance ?? 0);

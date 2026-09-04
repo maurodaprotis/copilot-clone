@@ -1,7 +1,13 @@
+import {
+  balanceDeltaForTxn,
+  normalizeReviewStatus,
+  type Transaction,
+} from "@copilot-clone/domain";
 import type { LocalDb } from "../db/types";
 
 /**
  * Mark a transaction reviewed locally and queue a sync of the review status.
+ * When review flips balance applicability, persist the delta on accounts.current_balance.
  */
 export async function reviewTransaction(
   transactionId: string,
@@ -13,12 +19,43 @@ export async function reviewTransaction(
 
   const existing = await db.getFirstAsync<{
     id: string;
+    account_id: string;
+    amount: number;
+    currency: string;
+    amount_account: number;
+    amount_reporting: number;
+    type: string;
+    is_refund: number;
     review_status: string;
-  }>("SELECT id, review_status FROM transactions WHERE id = ?", transactionId);
+    posted_at: string;
+    category_id: string | null;
+    note: string | null;
+    fingerprint: string | null;
+  }>("SELECT * FROM transactions WHERE id = ?", transactionId);
 
   if (!existing) {
     throw new Error(`Transaction not found: ${transactionId}`);
   }
+
+  const before: Transaction = {
+    id: existing.id,
+    account_id: existing.account_id,
+    category_id: existing.category_id,
+    amount: Number(existing.amount),
+    currency: existing.currency,
+    amount_account: Number(existing.amount_account),
+    amount_reporting: Number(existing.amount_reporting),
+    type: existing.type as Transaction["type"],
+    is_refund: Number(existing.is_refund) === 1,
+    review_status: normalizeReviewStatus(existing.review_status),
+    status: "posted",
+    posted_at: existing.posted_at,
+    note: existing.note,
+    transfer_pair_id: null,
+    fingerprint: existing.fingerprint,
+  };
+  const after: Transaction = { ...before, review_status: "reviewed" };
+  const delta = balanceDeltaForTxn(after) - balanceDeltaForTxn(before);
 
   await db.withTransactionAsync(async () => {
     await db.runAsync(
@@ -27,6 +64,14 @@ export async function reviewTransaction(
       now,
       transactionId,
     );
+
+    if (delta !== 0) {
+      await db.runAsync(
+        `UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?`,
+        delta,
+        existing.account_id,
+      );
+    }
 
     const payload = JSON.stringify({
       op: "review",
