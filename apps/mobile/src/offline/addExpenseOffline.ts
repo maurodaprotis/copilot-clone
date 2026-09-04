@@ -1,5 +1,6 @@
 import {
   deriveAmounts,
+  seedRateBook,
   transactionFingerprint,
   type RateBook,
 } from "@copilot-clone/domain";
@@ -19,7 +20,8 @@ export type AddExpenseOfflineInput = {
 };
 
 /**
- * Insert a pending / needs_review expense locally and enqueue an outbox row.
+ * Insert a needs_review expense locally and enqueue an outbox row.
+ * ReviewStatus is needs_review | reviewed (NOT pending — that is TxnStatus).
  */
 export async function addExpenseOffline(
   input: AddExpenseOfflineInput,
@@ -28,7 +30,10 @@ export async function addExpenseOffline(
   const db = dbOverride ?? (await (await import("../db/client")).getDb());
   const id = input.id ?? crypto.randomUUID();
   const posted_at = input.posted_at ?? new Date().toISOString();
-  const rate_book = input.rate_book ?? {};
+  const rate_book =
+    input.rate_book && Object.keys(input.rate_book).length > 0
+      ? input.rate_book
+      : seedRateBook();
   const amounts = deriveAmounts({
     amount: input.amount,
     currency: input.currency,
@@ -55,7 +60,7 @@ export async function addExpenseOffline(
         amount_account, amount_reporting, type, is_refund,
         review_status, posted_at, note, transfer_pair_id, fingerprint,
         synced, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'regular', 0, 'pending', ?, ?, NULL, ?, 0, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'regular', 0, 'needs_review', ?, ?, NULL, ?, 0, ?, ?)`,
       id,
       input.account_id,
       input.category_id ?? null,
@@ -79,7 +84,7 @@ export async function addExpenseOffline(
       currency: input.currency,
       type: "regular",
       is_refund: false,
-      review_status: "pending",
+      review_status: "needs_review",
       posted_at,
       note: input.note ?? null,
       fingerprint,

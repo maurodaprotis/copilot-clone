@@ -18,7 +18,7 @@ const item = {
   currency: "USD",
   type: "regular",
   is_refund: false,
-  review_status: "pending",
+  review_status: "needs_review",
   posted_at: "2026-09-04T15:00:00.000Z",
   note: "smoke cafe",
   fingerprint,
@@ -47,6 +47,19 @@ async function main() {
     return;
   }
 
+  const sampleFx = syncBody.sample_fx;
+  if (!sampleFx || sampleFx.rate == null) {
+    console.error("FAIL: expected seeded USD/ARS sample_fx with rate");
+    process.exitCode = 1;
+    return;
+  }
+  if (sampleFx.warning && /No FX rate/.test(sampleFx.warning)) {
+    console.error("FAIL: USD->ARS still missing rate after seed", sampleFx);
+    process.exitCode = 1;
+    return;
+  }
+  console.log("sample_fx ok", { rate: sampleFx.rate, amount: sampleFx.amount, warning: sampleFx.warning ?? null });
+
   // Idempotent re-push same fingerprint / id
   const sync2 = await fetch(`${apiUrl}/sync`, {
     method: "POST",
@@ -64,10 +77,16 @@ async function main() {
   const listBody = await listRes.json();
   const found = (listBody.transactions || []).find((t) => t.id === id);
   console.log("transactions count", (listBody.transactions || []).length);
-  console.log("found", found ? { id: found.id, review_status: found.review_status, amount: found.amount } : null);
+  console.log("found", found ? { id: found.id, review_status: found.review_status, amount: found.amount, amount_account: found.amount_account } : null);
 
-  if (!found || found.review_status !== "pending") {
-    console.error("FAIL: expected pending txn in DO store");
+  if (!found || found.review_status !== "needs_review") {
+    console.error("FAIL: expected needs_review txn in DO store", found && found.review_status);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (Number(found.amount_account) !== 70000) {
+    console.error("FAIL: expected amount_account 70000 from seeded FX, got", found.amount_account);
     process.exitCode = 1;
     return;
   }

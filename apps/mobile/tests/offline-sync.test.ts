@@ -6,7 +6,7 @@ import { reviewTransaction } from "../src/offline/reviewTransaction";
 import { syncOutbox } from "../src/offline/syncOutbox";
 
 describe("offline → To Review → sync", () => {
-  it("adds pending expense to To Review and outbox", async () => {
+  it("adds needs_review expense to To Review and outbox", async () => {
     const db = createMemoryDb();
     const { transactionId } = await addExpenseOffline(
       {
@@ -25,7 +25,7 @@ describe("offline → To Review → sync", () => {
     const toReview = await listToReview(db);
     expect(toReview).toHaveLength(1);
     expect(toReview[0]!.id).toBe(transactionId);
-    expect(toReview[0]!.review_status).toBe("pending");
+    expect(toReview[0]!.review_status).toBe("needs_review");
     expect(toReview[0]!.synced).toBe(0);
     expect(await countOutbox(db)).toBe(1);
   });
@@ -58,7 +58,7 @@ describe("offline → To Review → sync", () => {
 
     const toReview = await listToReview(db);
     expect(toReview).toHaveLength(1);
-    expect(toReview[0]!.review_status).toBe("pending");
+    expect(toReview[0]!.review_status).toBe("needs_review");
     expect(toReview[0]!.synced).toBe(1);
   });
 

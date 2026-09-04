@@ -1,5 +1,6 @@
 import * as SQLite from "expo-sqlite";
 import { CLIENT_SCHEMA } from "@copilot-clone/db";
+import { seedFxRates } from "@copilot-clone/domain";
 import {
   DEMO_ACCOUNT_CURRENCY,
   DEMO_ACCOUNT_ID,
@@ -16,6 +17,25 @@ async function seedDefaults(db: SQLite.SQLiteDatabase): Promise<void> {
     "Cash ARS",
     DEMO_ACCOUNT_CURRENCY,
   );
+
+  for (const row of seedFxRates()) {
+    await db.runAsync(
+      `INSERT OR IGNORE INTO fx_rates (from_currency, to_currency, on_date, rate)
+       VALUES (?, ?, ?, ?)`,
+      row.from,
+      row.to,
+      row.on_date,
+      row.rate,
+    );
+  }
+}
+
+async function migrateReviewStatus(db: SQLite.SQLiteDatabase): Promise<void> {
+  // Legacy: review_status "pending" meant needs_review (TxnStatus owns "pending").
+  await db.runAsync(
+    `UPDATE transactions SET review_status = 'needs_review'
+     WHERE review_status = 'pending'`,
+  );
 }
 
 export async function getDb(): Promise<LocalDb> {
@@ -31,6 +51,7 @@ export async function getDb(): Promise<LocalDb> {
       } catch {
         // column already exists
       }
+      await migrateReviewStatus(db);
       await seedDefaults(db);
       return db as unknown as LocalDb;
     })();

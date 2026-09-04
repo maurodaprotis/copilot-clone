@@ -1,19 +1,28 @@
 import type { Transaction } from "./types.js";
+import { normalizeReviewStatus } from "./types.js";
 
-/** Posted-only: pending / unposted do not apply to balance. */
+/**
+ * ReviewStatus needs_review does not apply to balance.
+ * Bank TxnStatus "pending" (when present) also does not apply.
+ */
 export function appliesToBalance(txn: Transaction): boolean {
-  return txn.review_status !== "pending";
+  const review = normalizeReviewStatus(txn.review_status);
+  if (review === "needs_review") return false;
+  if (txn.status === "pending") return false;
+  return true;
 }
 
 /**
  * Regular (expense) non-excluded transactions hit budgets.
- * Income/transfer and excluded/pending do not.
+ * Income/transfer and excluded/needs_review do not.
  */
 export function hitsBudget(txn: Transaction): boolean {
   if (txn.type !== "regular") return false;
-  if (txn.review_status === "excluded" || txn.review_status === "pending") {
+  const review = normalizeReviewStatus(txn.review_status);
+  if (review === "excluded" || review === "needs_review") {
     return false;
   }
+  if (txn.status === "pending") return false;
   return true;
 }
 

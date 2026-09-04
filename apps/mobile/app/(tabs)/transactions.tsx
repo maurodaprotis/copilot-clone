@@ -28,7 +28,7 @@ import { syncOutbox } from "../../src/offline/syncOutbox";
 import { createApiTransport } from "../../src/sync/apiTransport";
 
 export default function TransactionsScreen() {
-  const [pending, setPending] = useState<LocalTransaction[]>([]);
+  const [toReview, setToReview] = useState<LocalTransaction[]>([]);
   const [all, setAll] = useState<LocalTransaction[]>([]);
   const [outboxCount, setOutboxCount] = useState(0);
   const [amount, setAmount] = useState("50");
@@ -43,7 +43,7 @@ export default function TransactionsScreen() {
       listAllTransactions(),
       countOutbox(),
     ]);
-    setPending(p);
+    setToReview(p);
     setAll(a);
     setOutboxCount(o);
   }, []);
@@ -70,9 +70,9 @@ export default function TransactionsScreen() {
         account_currency: DEMO_ACCOUNT_CURRENCY,
         reporting_currency: DEMO_REPORTING_CURRENCY,
         note: note || null,
-        rate_book: { "USD:ARS:2026-09-04": 1400 },
+        rate_book: undefined, // client/UserDO seed USD/ARS 1400
       });
-      setMsg(`Added offline pending txn ${transactionId.slice(0, 8)}…`);
+      setMsg(`Added offline needs_review txn ${transactionId.slice(0, 8)}…`);
       await reload();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
@@ -156,8 +156,8 @@ export default function TransactionsScreen() {
         {msg ? <Text style={styles.msg}>{msg}</Text> : null}
       </View>
 
-      <Text style={styles.section}>To Review ({pending.length})</Text>
-      {pending.map((txn) => (
+      <Text style={styles.section}>To Review ({toReview.length})</Text>
+      {toReview.map((txn) => (
         <View key={txn.id} style={styles.card}>
           <View style={{ flex: 1 }}>
             <Text style={styles.cardTitle}>

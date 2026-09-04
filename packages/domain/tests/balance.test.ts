@@ -19,6 +19,7 @@ function txn(partial: Partial<Transaction>): Transaction {
     type: "regular",
     is_refund: false,
     review_status: "reviewed",
+    status: "posted",
     posted_at: "2026-09-01T12:00:00.000Z",
     note: null,
     transfer_pair_id: null,
@@ -28,9 +29,15 @@ function txn(partial: Partial<Transaction>): Transaction {
 }
 
 describe("balance and budget rules", () => {
-  it("pending does not apply to balance", () => {
-    expect(appliesToBalance(txn({ review_status: "pending" }))).toBe(false);
+  it("needs_review does not apply to balance", () => {
+    expect(appliesToBalance(txn({ review_status: "needs_review" }))).toBe(false);
+    expect(
+      appliesToBalance(txn({ review_status: "pending" as "needs_review" })),
+    ).toBe(false);
     expect(appliesToBalance(txn({ review_status: "reviewed" }))).toBe(true);
+    expect(
+      appliesToBalance(txn({ review_status: "reviewed", status: "pending" })),
+    ).toBe(false);
   });
 
   it("regular non-excluded hits budgets", () => {
@@ -43,6 +50,13 @@ describe("balance and budget rules", () => {
     expect(hitsBudget(txn({ type: "income", review_status: "reviewed" }))).toBe(
       false,
     );
+  });
+
+  it("needs_review does not hit budgets", () => {
+    expect(hitsBudget(txn({ review_status: "needs_review" }))).toBe(false);
+    expect(
+      hitsBudget(txn({ status: "pending", review_status: "reviewed" })),
+    ).toBe(false);
   });
 
   it("signed amounts", () => {

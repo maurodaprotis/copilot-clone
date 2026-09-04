@@ -5,7 +5,7 @@ export type SyncTransport = (items: unknown[]) => Promise<{ ok: boolean; saved?:
 /**
  * Push pending outbox rows via transport (HTTP in prod, mock in tests).
  * On success: deletes outbox rows and marks transactions synced=1.
- * Does NOT change review_status — pending stays in To Review until reviewed.
+ * Does NOT change review_status — needs_review stays in To Review until reviewed.
  */
 export async function syncOutbox(
   transport: SyncTransport,
