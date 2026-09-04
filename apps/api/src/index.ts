@@ -111,6 +111,88 @@ app.get("/splits", async (c) => {
   return proxyDo(c, `/splits${q}`);
 });
 
+
+app.get("/settings", async (c) => proxyDo(c, "/settings"));
+
+app.post("/settings", async (c) => {
+  const body = await c.req.text();
+  return proxyDo(c, "/settings", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+  });
+});
+
+app.get("/fx", async (c) => {
+  const series = c.req.query("rate_book");
+  const q = series ? `?rate_book=${encodeURIComponent(series)}` : "";
+  return proxyDo(c, `/fx${q}`);
+});
+
+app.post("/fx", async (c) => {
+  const body = await c.req.text();
+  return proxyDo(c, "/fx", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+  });
+});
+
+app.post("/fx/delete", async (c) => {
+  const body = await c.req.text();
+  return proxyDo(c, "/fx/delete", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+  });
+});
+
+app.get("/imports", async (c) => proxyDo(c, "/imports"));
+
+app.post("/imports", async (c) => {
+  const body = await c.req.text();
+  return proxyDo(c, "/imports", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+  });
+});
+
+app.get("/imports/:id", async (c) => {
+  const id = c.req.param("id");
+  return proxyDo(c, `/imports/${encodeURIComponent(id)}`);
+});
+
+app.post("/imports/:id/mapping", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.text();
+  return proxyDo(c, `/imports/${encodeURIComponent(id)}/mapping`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+  });
+});
+
+app.post("/imports/:id/commit", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.text();
+  return proxyDo(c, `/imports/${encodeURIComponent(id)}/commit`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: body || "{}",
+  });
+});
+
+app.post("/imports/:id/undo", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.text();
+  return proxyDo(c, `/imports/${encodeURIComponent(id)}/undo`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: body || "{}",
+  });
+});
+
 app.get("/do/health", async (c) => proxyDo(c, "/health"));
 
 export default app;
