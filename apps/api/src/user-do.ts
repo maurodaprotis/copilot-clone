@@ -8,10 +8,13 @@ import {
   deriveAmounts,
   fx_convert,
   totalEffectiveBudget,
+  normalizeReviewStatus,
+  seedFxRates,
   type BudgetMonth,
   type Category,
   type CategoryGroup,
   type RateBook,
+  type ReviewStatus,
   type Transaction,
 } from "@copilot-clone/domain";
 
@@ -28,7 +31,8 @@ type SyncPushItem = {
   currency?: string;
   type?: "regular" | "income" | "transfer";
   is_refund?: boolean;
-  review_status?: "pending" | "needs_review" | "reviewed" | "excluded";
+  /** Accepts legacy "pending" which normalizes to needs_review. */
+  review_status?: ReviewStatus | "pending";
   posted_at?: string;
   note?: string | null;
   transfer_pair_id?: string | null;
@@ -49,7 +53,12 @@ export class UserDO extends DurableObject<Env> {
   private async ensureSchema(): Promise<void> {
     if (this.ready) return;
     this.ctx.storage.sql.exec(SERVER_SCHEMA);
+    this.ctx.storage.sql.exec(
+      `UPDATE transactions SET review_status = 'needs_review'
+       WHERE review_status = 'pending'`,
+    );
     this.seedIfEmpty();
+    this.seedFxIfNeeded();
     this.ready = true;
   }
 
@@ -100,18 +109,35 @@ export class UserDO extends DurableObject<Env> {
       );
     }
 
-    // Demo cash account + FX so reporting math works.
     this.ctx.storage.sql.exec(
       `INSERT OR IGNORE INTO accounts (id, name, currency, type, is_archived)
        VALUES ('acc-cash-ars', 'Cash ARS', 'ARS', 'cash', 0)`,
     );
-    this.ctx.storage.sql.exec(
-      `INSERT OR IGNORE INTO fx_rates (from_currency, to_currency, on_date, rate)
-       VALUES ('USD', 'ARS', '2026-09-01', 1400)`,
-    );
+  }
+
+  private seedFxIfNeeded(): void {
+    const existing = [
+      ...this.ctx.storage.sql.exec(
+        `SELECT 1 as ok FROM fx_rates
+         WHERE from_currency = 'USD' AND to_currency = 'ARS' LIMIT 1`,
+      ),
+    ];
+    if (existing.length > 0) return;
+
+    for (const row of seedFxRates()) {
+      this.ctx.storage.sql.exec(
+        `INSERT OR REPLACE INTO fx_rates (from_currency, to_currency, on_date, rate)
+         VALUES (?, ?, ?, ?)`,
+        row.from,
+        row.to,
+        row.on_date,
+        row.rate,
+      );
+    }
   }
 
   private loadRateBook(): RateBook {
+    this.seedFxIfNeeded();
     const book: RateBook = {};
     const rows = this.ctx.storage.sql.exec(
       "SELECT from_currency, to_currency, on_date, rate FROM fx_rates",
@@ -231,7 +257,8 @@ export class UserDO extends DurableObject<Env> {
     );
     let balance = 0;
     for (const row of rows) {
-      if (String(row.review_status) === "pending" || String(row.review_status) === "needs_review") continue;
+      const review = normalizeReviewStatus(String(row.review_status));
+      if (review === "needs_review") continue;
       const amt = Number(row.amount_account);
       const type = String(row.type);
       const isRefund = Number(row.is_refund) === 1;
@@ -244,9 +271,10 @@ export class UserDO extends DurableObject<Env> {
 
   private applyReview(item: SyncPushItem): string {
     const now = item.updated_at ?? new Date().toISOString();
+    const status = normalizeReviewStatus(item.review_status ?? "reviewed");
     this.ctx.storage.sql.exec(
       `UPDATE transactions SET review_status = ?, updated_at = ? WHERE id = ?`,
-      item.review_status ?? "reviewed",
+      status,
       now,
       item.id,
     );
@@ -278,7 +306,6 @@ export class UserDO extends DurableObject<Env> {
   }
 
   private applyUpsert(item: SyncPushItem, rateBook: RateBook): string {
-    // Idempotency: same client id wins; same fingerprint maps to existing row.
     if (item.fingerprint) {
       const existingId = this.findByFingerprint(item.fingerprint);
       if (existingId && existingId !== item.id) {
@@ -295,8 +322,7 @@ export class UserDO extends DurableObject<Env> {
       rate_book: rateBook,
     });
     const now = new Date().toISOString();
-    // Keep pending/needs_review until client sends an explicit review op.
-    const reviewStatus = item.review_status ?? "pending";
+    const reviewStatus = normalizeReviewStatus(item.review_status ?? "needs_review");
 
     this.ctx.storage.sql.exec(
       `INSERT OR REPLACE INTO transactions (
@@ -384,6 +410,21 @@ export class UserDO extends DurableObject<Env> {
     };
   }
 
+  private listTransactionsNormalized(): Record<string, unknown>[] {
+    const rows = [
+      ...this.ctx.storage.sql.exec(
+        "SELECT * FROM transactions ORDER BY posted_at DESC",
+      ),
+    ];
+    return rows.map((row) => {
+      const out: Record<string, unknown> = { ...row };
+      out.review_status = normalizeReviewStatus(
+        row.review_status == null ? null : String(row.review_status),
+      );
+      return out;
+    });
+  }
+
   async fetch(request: Request): Promise<Response> {
     await this.ensureSchema();
     const url = new URL(request.url);
@@ -435,12 +476,7 @@ export class UserDO extends DurableObject<Env> {
     }
 
     if (request.method === "GET" && url.pathname === "/transactions") {
-      const rows = [
-        ...this.ctx.storage.sql.exec(
-          "SELECT * FROM transactions ORDER BY posted_at DESC",
-        ),
-      ];
-      return Response.json({ transactions: rows });
+      return Response.json({ transactions: this.listTransactionsNormalized() });
     }
 
     if (request.method === "GET" && url.pathname === "/categories") {

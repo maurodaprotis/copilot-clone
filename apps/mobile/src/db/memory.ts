@@ -14,6 +14,7 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
     category_groups: new Map(),
     categories: new Map(),
     budget_months: new Map(),
+    fx_rates: new Map(),
   };
 
   function budgetKey(categoryId: string, yearMonth: string): string {
@@ -34,7 +35,7 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
         amount_reporting: p[6] as number,
         type: "regular",
         is_refund: 0,
-        review_status: "pending",
+        review_status: "needs_review",
         posted_at: p[7] as string,
         note: p[8] as string | null,
         transfer_pair_id: null,
@@ -136,6 +137,21 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
       return { changes: 1 };
     }
 
+
+    if (s.startsWith("INSERT OR IGNORE INTO fx_rates") || s.startsWith("INSERT OR REPLACE INTO fx_rates")) {
+      const key = `${p[0]}:${p[1]}:${p[2]}`;
+      if (s.startsWith("INSERT OR IGNORE") && tables.fx_rates.has(key)) {
+        return { changes: 0 };
+      }
+      tables.fx_rates.set(key, {
+        from_currency: p[0] as string,
+        to_currency: p[1] as string,
+        on_date: p[2] as string,
+        rate: p[3] as number,
+      });
+      return { changes: 1 };
+    }
+
     if (s.startsWith("DELETE FROM outbox WHERE id =")) {
       tables.outbox.delete(String(p[0]));
       return { changes: 1 };
@@ -160,6 +176,12 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
     }
 
     if (s.startsWith("UPDATE transactions SET review_status =")) {
+      if (s.includes("WHERE review_status = 'pending'") && p.length === 0) {
+        for (const row of tables.transactions.values()) {
+          if (row.review_status === "pending") row.review_status = "needs_review";
+        }
+        return { changes: 1 };
+      }
       const row = tables.transactions.get(String(p[2]));
       if (row) {
         row.review_status = p[0] as string;
@@ -201,9 +223,13 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
       return rows as T[];
     }
 
-    if (s.includes("review_status") && (s.includes("'pending'") || s.includes("'needs_review'")) && s.includes("WHERE")) {
+    if (
+      s.includes("review_status IN ('needs_review', 'pending')") ||
+      s.includes("review_status = 'needs_review'") ||
+      (s.includes("review_status") && s.includes("'pending'") && s.includes("WHERE"))
+    ) {
       return [...tables.transactions.values()]
-        .filter((r) => r.review_status === "pending")
+        .filter((r) => r.review_status === "needs_review" || r.review_status === "pending")
         .sort((a, b) => String(b.posted_at).localeCompare(String(a.posted_at))) as T[];
     }
 

@@ -63,7 +63,7 @@ describe("budget spent calculation", () => {
   });
 
   it("pending review_status does NOT hit budgets", () => {
-    const pending = txn({ review_status: "pending" });
+    const pending = txn({ review_status: "needs_review" });
     expect(hitsBudget(pending, dining)).toBe(false);
     expect(budgetSpendDelta(pending, dining)).toBe(0);
   });
@@ -118,7 +118,7 @@ describe("budget spent calculation", () => {
       txn({
         id: "f",
         amount_reporting: 7,
-        review_status: "pending",
+        review_status: "needs_review",
         posted_at: "2026-09-15T00:00:00Z",
       }),
     ];
@@ -159,7 +159,7 @@ describe("budget spent calculation", () => {
       txn({
         id: "3",
         amount_reporting: 5,
-        review_status: "pending",
+        review_status: "needs_review",
         posted_at: "2026-09-02T00:00:00Z",
       }),
     ];

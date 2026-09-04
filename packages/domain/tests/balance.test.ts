@@ -29,38 +29,31 @@ function txn(partial: Partial<Transaction>): Transaction {
 }
 
 describe("balance and budget rules", () => {
-  it("pending does not apply to balance", () => {
-    expect(appliesToBalance(txn({ review_status: "pending" }))).toBe(false);
-    expect(appliesToBalance(txn({ status: "pending" }))).toBe(false);
+  it("needs_review does not apply to balance", () => {
+    expect(appliesToBalance(txn({ review_status: "needs_review" }))).toBe(false);
+    expect(
+      appliesToBalance(txn({ review_status: "pending" as "needs_review" })),
+    ).toBe(false);
     expect(appliesToBalance(txn({ review_status: "reviewed" }))).toBe(true);
+    expect(
+      appliesToBalance(txn({ review_status: "reviewed", status: "pending" })),
+    ).toBe(false);
   });
 
   it("regular non-excluded hits budgets", () => {
-    expect(hitsBudget(txn({ type: "regular", review_status: "reviewed" }))).toBe(
-      true,
-    );
-    expect(hitsBudget(txn({ type: "regular", review_status: "excluded" }))).toBe(
-      false,
-    );
-    expect(hitsBudget(txn({ type: "income", review_status: "reviewed" }))).toBe(
-      false,
-    );
+    expect(hitsBudget(txn({ type: "regular", review_status: "reviewed" }))).toBe(true);
+    expect(hitsBudget(txn({ type: "regular", review_status: "excluded" }))).toBe(false);
+    expect(hitsBudget(txn({ type: "income", review_status: "reviewed" }))).toBe(false);
   });
 
-  it("pending does not hit budgets", () => {
-    expect(hitsBudget(txn({ review_status: "pending" }))).toBe(false);
-    expect(hitsBudget(txn({ status: "pending", review_status: "reviewed" }))).toBe(
-      false,
-    );
+  it("needs_review and pending status do not hit budgets", () => {
+    expect(hitsBudget(txn({ review_status: "needs_review" }))).toBe(false);
+    expect(hitsBudget(txn({ status: "pending", review_status: "reviewed" }))).toBe(false);
   });
 
   it("signed amounts", () => {
-    expect(signedAmountAccount(txn({ type: "regular", is_refund: false }))).toBe(
-      -100,
-    );
-    expect(signedAmountAccount(txn({ type: "regular", is_refund: true }))).toBe(
-      100,
-    );
+    expect(signedAmountAccount(txn({ type: "regular", is_refund: false }))).toBe(-100);
+    expect(signedAmountAccount(txn({ type: "regular", is_refund: true }))).toBe(100);
     expect(signedAmountAccount(txn({ type: "income" }))).toBe(100);
   });
 });

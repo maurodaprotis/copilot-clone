@@ -98,7 +98,7 @@ export default function DashboardScreen() {
     >
       <Text style={styles.title}>Dashboard</Text>
       <Text style={styles.sub}>
-        Spending line (posted reviewed Regular) · pending excluded
+        Spending line (posted reviewed Regular) · needs_review / bank-pending excluded
       </Text>
 
       <View style={styles.chartCard}>

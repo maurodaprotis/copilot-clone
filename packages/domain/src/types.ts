@@ -2,12 +2,13 @@
 export type TransactionType = "regular" | "income" | "transfer";
 
 /**
- * To Review inbox. Spec: needs_review | reviewed.
- * Scaffold also used pending (= needs_review) and excluded.
+ * Review inbox status. Distinct from TxnStatus.
+ * `pending` is NOT a ReviewStatus — it is a bank clearing state (TxnStatus).
+ * Legacy stored value `"pending"` on review_status is treated as `needs_review`.
  */
-export type ReviewStatus = "pending" | "needs_review" | "reviewed" | "excluded";
+export type ReviewStatus = "needs_review" | "reviewed" | "excluded";
 
-/** CLONE-SPEC TxnStatus. Pending does not move balances, budgets, or cash flow. */
+/** Bank clearing: pending vs posted. Independent of review_status. */
 export type TxnStatus = "pending" | "posted";
 
 export type BudgetRolloverMode = "off" | "under_only" | "over_only" | "both";
@@ -62,17 +63,12 @@ export interface Transaction {
   /** Always positive. */
   amount: number;
   currency: string;
-  /** Amount in the account's currency (positive). */
   amount_account: number;
-  /** Amount in reporting currency (positive). */
   amount_reporting: number;
   type: TransactionType;
   is_refund: boolean;
   review_status: ReviewStatus;
-  /**
-   * Posted vs pending hold. Defaults to posted when omitted (older rows).
-   * Independent of review_status (needs_review can still be posted).
-   */
+  /** Bank pending vs posted. Defaults to posted when omitted. */
   status?: TxnStatus;
   /** First-class exclude (T1). Also inferred from review_status === "excluded". */
   is_excluded?: boolean;
@@ -82,7 +78,6 @@ export interface Transaction {
   fingerprint: string | null;
 }
 
-/** rate_book maps `${from}:${to}:${YYYY-MM-DD}` -> rate (1 from = rate to). */
 export type RateBook = Record<string, number>;
 
 export interface FxRate {
@@ -100,4 +95,16 @@ export interface FxConvertResult {
   rate: number | null;
   used_fallback: boolean;
   warning?: string;
+}
+
+/** Map legacy review_status `"pending"` → `needs_review` on read/write. */
+export function normalizeReviewStatus(
+  value: string | null | undefined,
+): ReviewStatus {
+  if (value === "reviewed" || value === "excluded") return value;
+  return "needs_review";
+}
+
+export function isNeedsReview(value: string | null | undefined): boolean {
+  return normalizeReviewStatus(value) === "needs_review";
 }

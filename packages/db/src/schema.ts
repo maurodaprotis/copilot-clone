@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   amount_reporting REAL NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('regular', 'income', 'transfer')),
   is_refund INTEGER NOT NULL DEFAULT 0,
-  review_status TEXT NOT NULL DEFAULT 'pending',
+  review_status TEXT NOT NULL DEFAULT 'needs_review',
   posted_at TEXT NOT NULL,
   note TEXT,
   transfer_pair_id TEXT,
