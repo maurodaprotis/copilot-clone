@@ -13,11 +13,15 @@ export type TxnStatus = "pending" | "posted";
 
 export type BudgetRolloverMode = "off" | "under_only" | "over_only" | "both";
 
+export type FxSeries = "official" | "parallel" | "custom";
+
 export interface UserSettings {
   id: string;
   reporting_currency: string;
   locale: string;
   timezone: string;
+  /** Which FxRate.rate_book budgets/NW use by default. */
+  default_fx_series: FxSeries;
 }
 
 /** Spec AccountType — no separate `cash` (manual cash seeds as `other`). */
@@ -105,6 +109,17 @@ export interface FxRate {
   to: string;
   on_date: string;
   rate: number;
+  rate_book: FxSeries;
+  source?: "manual" | "provider" | "statement";
+}
+
+export interface FxRateInput {
+  base: string;
+  quote: string;
+  as_of: string;
+  rate: number;
+  rate_book: FxSeries;
+  source?: "manual" | "provider" | "statement";
 }
 
 export interface FxConvertResult {
@@ -162,4 +177,57 @@ export interface SplitLeg {
   amount: number;
   /** Optional budget month override (YYYY-MM). */
   year_month_override: string | null;
+}
+
+export type ImportJobType = "bank_csv";
+export type ImportJobStatus =
+  | "uploaded"
+  | "parsing"
+  | "mapping"
+  | "ready_review"
+  | "committed"
+  | "failed";
+
+export type ImportRowAction = "create_txn" | "skip" | "duplicate";
+
+export interface CsvColumnMapping {
+  date: string;
+  description: string;
+  amount?: string;
+  debit?: string;
+  credit?: string;
+  currency?: string;
+}
+
+export interface ImportJob {
+  id: string;
+  type: ImportJobType;
+  status: ImportJobStatus;
+  account_id: string | null;
+  currency: string | null;
+  file_name: string | null;
+  mime: string | null;
+  detected_format: string | null;
+  mapping_json: string | null;
+  error_log: string | null;
+  created_at: string;
+  committed_at: string | null;
+  undone_at: string | null;
+  row_count: number;
+  created_count: number;
+  duplicate_count: number;
+}
+
+export interface ImportRow {
+  id: string;
+  job_id: string;
+  raw_payload: string;
+  row_date: string | null;
+  name: string | null;
+  amount: number | null;
+  currency: string | null;
+  fingerprint: string | null;
+  action: ImportRowAction;
+  result_entity_id: string | null;
+  row_index: number;
 }
