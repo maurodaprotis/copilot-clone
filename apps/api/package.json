@@ -1,0 +1,22 @@
+{
+  "name": "@copilot-clone/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "wrangler check"
+  },
+  "dependencies": {
+    "@copilot-clone/db": "workspace:*",
+    "@copilot-clone/domain": "workspace:*",
+    "hono": "^4.7.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260904.1",
+    "typescript": "^5.8.2",
+    "wrangler": "^4.1.0"
+  }
+}

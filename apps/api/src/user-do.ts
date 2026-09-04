@@ -1,0 +1,164 @@
+import { DurableObject } from "cloudflare:workers";
+import { SERVER_SCHEMA } from "@copilot-clone/db";
+import {
+  deriveAmounts,
+  fx_convert,
+  type RateBook,
+  type Transaction,
+} from "@copilot-clone/domain";
+
+export interface Env {
+  USER_DO: DurableObjectNamespace<UserDO>;
+}
+
+type SyncPushItem = {
+  id: string;
+  account_id: string;
+  category_id?: string | null;
+  amount: number;
+  currency: string;
+  type: "regular" | "income" | "transfer";
+  is_refund?: boolean;
+  review_status?: "pending" | "reviewed" | "excluded";
+  posted_at: string;
+  note?: string | null;
+  transfer_pair_id?: string | null;
+  fingerprint?: string | null;
+  account_currency: string;
+  reporting_currency: string;
+};
+
+export class UserDO extends DurableObject<Env> {
+  private ready = false;
+
+  private async ensureSchema(): Promise<void> {
+    if (this.ready) return;
+    this.ctx.storage.sql.exec(SERVER_SCHEMA);
+    this.ready = true;
+  }
+
+  private loadRateBook(): RateBook {
+    const book: RateBook = {};
+    const rows = this.ctx.storage.sql.exec(
+      "SELECT from_currency, to_currency, on_date, rate FROM fx_rates",
+    );
+    for (const row of rows) {
+      const from = String(row.from_currency);
+      const to = String(row.to_currency);
+      const on_date = String(row.on_date);
+      const rate = Number(row.rate);
+      book[`${from}:${to}:${on_date}`] = rate;
+    }
+    return book;
+  }
+
+  /** Recompute balances from posted transactions (authoritative on DO). */
+  balanceForAccount(accountId: string): number {
+    const rows = this.ctx.storage.sql.exec(
+      `SELECT amount_account, type, is_refund, review_status
+       FROM transactions WHERE account_id = ?`,
+      accountId,
+    );
+    let balance = 0;
+    for (const row of rows) {
+      if (String(row.review_status) === "pending") continue;
+      const amt = Number(row.amount_account);
+      const type = String(row.type);
+      const isRefund = Number(row.is_refund) === 1;
+      if (type === "income") balance += amt;
+      else if (type === "regular") balance += isRefund ? amt : -amt;
+      else balance -= amt;
+    }
+    return balance;
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    await this.ensureSchema();
+    const url = new URL(request.url);
+
+    if (request.method === "GET" && url.pathname === "/health") {
+      return Response.json({ ok: true, do: "UserDO" });
+    }
+
+    if (request.method === "POST" && url.pathname === "/fx") {
+      const body = (await request.json()) as {
+        from: string;
+        to: string;
+        on_date: string;
+        rate: number;
+      };
+      this.ctx.storage.sql.exec(
+        `INSERT OR REPLACE INTO fx_rates (from_currency, to_currency, on_date, rate)
+         VALUES (?, ?, ?, ?)`,
+        body.from.toUpperCase(),
+        body.to.toUpperCase(),
+        body.on_date,
+        body.rate,
+      );
+      return Response.json({ ok: true });
+    }
+
+    if (request.method === "POST" && url.pathname === "/sync") {
+      const body = (await request.json()) as { items: SyncPushItem[] };
+      const rateBook = this.loadRateBook();
+      const saved: string[] = [];
+
+      for (const item of body.items ?? []) {
+        const amounts = deriveAmounts({
+          amount: item.amount,
+          currency: item.currency,
+          account_currency: item.account_currency,
+          reporting_currency: item.reporting_currency,
+          on_date: item.posted_at.slice(0, 10),
+          rate_book: rateBook,
+        });
+        const now = new Date().toISOString();
+        this.ctx.storage.sql.exec(
+          `INSERT OR REPLACE INTO transactions (
+            id, account_id, category_id, amount, currency,
+            amount_account, amount_reporting, type, is_refund,
+            review_status, posted_at, note, transfer_pair_id, fingerprint,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          item.id,
+          item.account_id,
+          item.category_id ?? null,
+          item.amount,
+          item.currency.toUpperCase(),
+          amounts.amount_account,
+          amounts.amount_reporting,
+          item.type,
+          item.is_refund ? 1 : 0,
+          item.review_status ?? "reviewed",
+          item.posted_at,
+          item.note ?? null,
+          item.transfer_pair_id ?? null,
+          item.fingerprint ?? null,
+          now,
+          now,
+        );
+        saved.push(item.id);
+      }
+
+      return Response.json({
+        ok: true,
+        saved,
+        // balances recomputed on DO (sample for first account if present)
+        sample_fx: fx_convert(1, "USD", "ARS", "2026-09-01", rateBook),
+      });
+    }
+
+    if (request.method === "GET" && url.pathname === "/transactions") {
+      const rows = [
+        ...this.ctx.storage.sql.exec(
+          "SELECT * FROM transactions ORDER BY posted_at DESC",
+        ),
+      ];
+      return Response.json({ transactions: rows });
+    }
+
+    return new Response("Not found", { status: 404 });
+  }
+}
+
+export type { Transaction };

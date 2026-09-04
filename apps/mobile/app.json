@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Copilot Clone",
+    "slug": "copilot-clone",
+    "scheme": "copilotclone",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
