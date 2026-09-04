@@ -81,7 +81,7 @@ export default function DashboardScreen() {
       }
     >
       <Text style={styles.title}>Dashboard</Text>
-      <Text style={styles.sub}>To Review — local SQLite (pending)</Text>
+      <Text style={styles.sub}>To Review — local SQLite (needs_review)</Text>
 
       <View style={styles.row}>
         <Pressable style={styles.btn} onPress={() => void onSync()} disabled={syncing}>
@@ -101,7 +101,7 @@ export default function DashboardScreen() {
 
       {items.length === 0 && !loading ? (
         <Text style={styles.empty}>
-          No pending expenses. Add one from Transactions (offline-capable).
+          No expenses needing review. Add one from Transactions (offline-capable).
         </Text>
       ) : null}
 

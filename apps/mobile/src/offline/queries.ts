@@ -1,3 +1,4 @@
+import { normalizeReviewStatus } from "@copilot-clone/domain";
 import type { LocalDb } from "../db/types";
 
 export type LocalTransaction = {
@@ -19,25 +20,34 @@ export type LocalTransaction = {
   updated_at: string;
 };
 
-/** Pending / needs_review transactions for Dashboard To Review + Transactions inbox. */
+function normalizeTxn(row: LocalTransaction): LocalTransaction {
+  return {
+    ...row,
+    review_status: normalizeReviewStatus(row.review_status),
+  };
+}
+
+/** needs_review transactions for Dashboard To Review + Transactions inbox. */
 export async function listToReview(
   dbOverride?: LocalDb,
 ): Promise<LocalTransaction[]> {
   const db = dbOverride ?? (await (await import("../db/client")).getDb());
-  return db.getAllAsync<LocalTransaction>(
+  const rows = await db.getAllAsync<LocalTransaction>(
     `SELECT * FROM transactions
-     WHERE review_status = 'pending'
+     WHERE review_status IN ('needs_review', 'pending')
      ORDER BY posted_at DESC`,
   );
+  return rows.map(normalizeTxn);
 }
 
 export async function listAllTransactions(
   dbOverride?: LocalDb,
 ): Promise<LocalTransaction[]> {
   const db = dbOverride ?? (await (await import("../db/client")).getDb());
-  return db.getAllAsync<LocalTransaction>(
+  const rows = await db.getAllAsync<LocalTransaction>(
     `SELECT * FROM transactions ORDER BY posted_at DESC`,
   );
+  return rows.map(normalizeTxn);
 }
 
 export async function countOutbox(dbOverride?: LocalDb): Promise<number> {

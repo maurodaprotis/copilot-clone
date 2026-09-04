@@ -15,7 +15,7 @@ Argentina-first Copilot Money-inspired personal finance scaffold.
 
 ### Data flow
 
-1. Mobile writes a pending transaction + outbox row (`addExpenseOffline`).
+1. Mobile writes a `needs_review` transaction + outbox row (`addExpenseOffline`).
 2. Sync module pushes outbox payloads to `POST /sync` on the Worker.
 3. Worker forwards to the user's `UserDO`, which stores rows in DO SQLite and recomputes balances/FX authoritatively.
 
@@ -23,7 +23,9 @@ Argentina-first Copilot Money-inspired personal finance scaffold.
 
 - Transaction `amount` is always positive; direction comes from `type` (regular | income | transfer) and `is_refund`.
 - `amount_account` / `amount_reporting` derived via `fx_convert` + `rate_book`.
-- Posted-only applies to balances; regular non-excluded hits budgets.
+- Balances skip `needs_review` (and bank `TxnStatus` pending); regular non-excluded hits budgets.
+- `review_status` is `needs_review` | `reviewed` | `excluded` — distinct from bank `TxnStatus` (`pending` | `posted`).
+- UserDO + mobile seed USD/ARS FxRate (1400) on first access so convert does not warn.
 
 ## Requirements
 
