@@ -3,6 +3,7 @@ import { ACCOUNTS_MIGRATE_SQL, SERVER_SCHEMA, TRANSACTIONS_MIGRATE_SQL, seedBudg
 import {
   applyNameRuleToTransaction,
   assertBalancedSplit,
+  isClientError,
   balanceDeltaForTxn,
   buildAccountBalanceRows,
   buildCategoryBudgetRows,
@@ -845,40 +846,50 @@ export class UserDO extends DurableObject<Env> {
       const rateBook = this.loadRateBook();
       const saved: string[] = [];
 
-      for (const item of body.items ?? []) {
-        if (item.op === "review") {
-          saved.push(this.applyReview(item));
-          continue;
+      try {
+        for (const item of body.items ?? []) {
+          if (item.op === "review") {
+            saved.push(this.applyReview(item));
+            continue;
+          }
+          if (item.op === "budget_upsert") {
+            saved.push(this.applyBudgetUpsert(item));
+            continue;
+          }
+          if (item.op === "account_upsert") {
+            saved.push(this.applyAccountUpsert(item));
+            continue;
+          }
+          if (item.op === "rule_upsert") {
+            saved.push(this.applyRuleUpsert(item));
+            continue;
+          }
+          if (item.op === "tag_upsert") {
+            saved.push(this.applyTagUpsert(item));
+            continue;
+          }
+          if (item.op === "tag_assign") {
+            saved.push(this.applyTagAssign(item, true));
+            continue;
+          }
+          if (item.op === "tag_unassign") {
+            saved.push(this.applyTagAssign(item, false));
+            continue;
+          }
+          if (item.op === "split_set") {
+            saved.push(this.applySplitSet(item));
+            continue;
+          }
+          saved.push(this.applyUpsert(item, rateBook));
         }
-        if (item.op === "budget_upsert") {
-          saved.push(this.applyBudgetUpsert(item));
-          continue;
+      } catch (err) {
+        if (isClientError(err)) {
+          return Response.json(
+            { error: err.code, message: err.message },
+            { status: err.status },
+          );
         }
-        if (item.op === "account_upsert") {
-          saved.push(this.applyAccountUpsert(item));
-          continue;
-        }
-        if (item.op === "rule_upsert") {
-          saved.push(this.applyRuleUpsert(item));
-          continue;
-        }
-        if (item.op === "tag_upsert") {
-          saved.push(this.applyTagUpsert(item));
-          continue;
-        }
-        if (item.op === "tag_assign") {
-          saved.push(this.applyTagAssign(item, true));
-          continue;
-        }
-        if (item.op === "tag_unassign") {
-          saved.push(this.applyTagAssign(item, false));
-          continue;
-        }
-        if (item.op === "split_set") {
-          saved.push(this.applySplitSet(item));
-          continue;
-        }
-        saved.push(this.applyUpsert(item, rateBook));
+        throw err;
       }
 
       return Response.json({

@@ -1,3 +1,4 @@
+export * from "./errors.js";
 export * from "./types.js";
 export * from "./fx.js";
 export * from "./fxSeed.js";

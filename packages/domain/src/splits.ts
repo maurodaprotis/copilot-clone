@@ -1,3 +1,4 @@
+import { ClientError } from "./errors.js";
 import type { Category, SplitLeg, Transaction } from "./types.js";
 import { normalizeReviewStatus } from "./types.js";
 
@@ -27,7 +28,8 @@ export function assertBalancedSplit(
   tolerance = DEFAULT_TOLERANCE,
 ): void {
   if (!isBalancedSplit(parentAmount, legs, tolerance)) {
-    throw new Error(
+    throw new ClientError(
+      "unbalanced_split",
       `Unbalanced split: legs sum ${splitLegsSum(legs)} != parent ${parentAmount}`,
     );
   }
