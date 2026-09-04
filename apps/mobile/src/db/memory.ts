@@ -82,7 +82,7 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
         id,
         name: p[1] as string,
         currency: p[2] as string,
-        type: (p[3] as string) || "cash",
+        type: (p[3] as string) || "other",
         is_archived: Number(p[4] ?? 0),
         include_in_net_worth: Number(p[5] ?? 1),
         current_balance: Number(p[6] ?? 0),
@@ -191,6 +191,33 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
         row.review_status = p[0] as string;
         row.synced = 0;
         row.updated_at = p[1] as string;
+      }
+      return { changes: 1 };
+    }
+
+    if (s.startsWith("UPDATE accounts SET current_balance = current_balance +")) {
+      const row = tables.accounts.get(String(p[1]));
+      if (row) {
+        row.current_balance = Number(row.current_balance ?? 0) + Number(p[0] ?? 0);
+      }
+      return { changes: 1 };
+    }
+
+    if (s.startsWith("UPDATE accounts SET current_balance =")) {
+      const row = tables.accounts.get(String(p[1]));
+      if (row) {
+        row.current_balance = Number(p[0] ?? 0);
+      }
+      return { changes: 1 };
+    }
+
+    if (s.startsWith("UPDATE accounts SET type =")) {
+      const from = s.match(/WHERE type = '([^']+)'/);
+      const to = s.match(/SET type = '([^']+)'/);
+      if (from && to) {
+        for (const row of tables.accounts.values()) {
+          if (row.type === from[1]) row.type = to[1]!;
+        }
       }
       return { changes: 1 };
     }

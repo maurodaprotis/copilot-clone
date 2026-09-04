@@ -26,4 +26,10 @@
 3. **Transactions** → tap row → equal 2-way split → Save. Budgets count legs only (parent not double-counted). Unbalanced splits rejected.
 4. Categories / Dashboard / Cash Flow / Accounts still work; needs_review preserved.
 
-No Plaid/Postgres.
+No rebalance UI. No Plaid/Postgres.
+
+## Accounts notes
+
+- AccountType: credit_card | depository | investment | loan | other | real_estate
+- Default manual cash seed: `other` (`acc-cash-ars`)
+- `current_balance` is persisted live balance (updated on review/upsert); sync carries it via account_upsert / GET /accounts

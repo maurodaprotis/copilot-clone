@@ -13,7 +13,7 @@ async function seedDefaults(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.runAsync(
     `INSERT OR IGNORE INTO accounts (
        id, name, currency, type, is_archived, include_in_net_worth, current_balance
-     ) VALUES (?, ?, ?, 'cash', 0, 1, 0)`,
+     ) VALUES (?, ?, ?, 'other', 0, 1, 0)`,
     DEMO_ACCOUNT_ID,
     "Cash ARS",
     DEMO_ACCOUNT_CURRENCY,
@@ -79,6 +79,81 @@ async function migrateReviewStatus(db: SQLite.SQLiteDatabase): Promise<void> {
   );
 }
 
+
+async function migrateAccountTypes(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.runAsync(`UPDATE accounts SET type = 'other' WHERE type = 'cash'`);
+  await db.runAsync(`UPDATE accounts SET type = 'depository' WHERE type = 'bank'`);
+  await db.runAsync(`UPDATE accounts SET type = 'credit_card' WHERE type = 'credit'`);
+}
+
+async function migrateAccountBalances(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.execAsync(
+    `CREATE TABLE IF NOT EXISTS _migrations (id TEXT PRIMARY KEY)`,
+  );
+  const done = await db.getFirstAsync<{ id: string }>(
+    `SELECT id FROM _migrations WHERE id = 'acct_bal_v2' LIMIT 1`,
+  );
+  if (done) return;
+
+  const {
+    recomputeBalanceFromOpeningAndTxns,
+    normalizeReviewStatus,
+  } = await import("@copilot-clone/domain");
+
+  const accounts = await db.getAllAsync<{
+    id: string;
+    current_balance: number;
+  }>("SELECT id, current_balance FROM accounts");
+  const txns = await db.getAllAsync<{
+    id: string;
+    account_id: string;
+    amount_account: number;
+    amount_reporting: number;
+    amount: number;
+    currency: string;
+    type: string;
+    is_refund: number;
+    review_status: string;
+    posted_at: string;
+    category_id: string | null;
+    note: string | null;
+    fingerprint: string | null;
+  }>("SELECT * FROM transactions");
+
+  const domainTxns = txns.map((row) => ({
+    id: row.id,
+    account_id: row.account_id,
+    category_id: row.category_id,
+    amount: Number(row.amount),
+    currency: row.currency,
+    amount_account: Number(row.amount_account),
+    amount_reporting: Number(row.amount_reporting),
+    type: row.type as "regular" | "income" | "transfer",
+    is_refund: Number(row.is_refund) === 1,
+    review_status: normalizeReviewStatus(row.review_status),
+    status: "posted" as const,
+    posted_at: row.posted_at,
+    note: row.note,
+    transfer_pair_id: null,
+    fingerprint: row.fingerprint,
+  }));
+
+  for (const a of accounts) {
+    const bal = recomputeBalanceFromOpeningAndTxns(
+      { id: a.id, current_balance: Number(a.current_balance ?? 0) },
+      domainTxns,
+    );
+    await db.runAsync(
+      `UPDATE accounts SET current_balance = ? WHERE id = ?`,
+      bal,
+      a.id,
+    );
+  }
+  await db.runAsync(
+    `INSERT OR IGNORE INTO _migrations (id) VALUES ('acct_bal_v2')`,
+  );
+}
+
 export async function getDb(): Promise<LocalDb> {
   if (!dbPromise) {
     dbPromise = (async () => {
@@ -100,7 +175,9 @@ export async function getDb(): Promise<LocalDb> {
         }
       }
       await migrateReviewStatus(db);
+      await migrateAccountTypes(db);
       await seedDefaults(db);
+      await migrateAccountBalances(db);
       return db as unknown as LocalDb;
     })();
   }
