@@ -76,17 +76,21 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
       return { changes: 1 };
     }
 
-    if (s.startsWith("INSERT OR IGNORE INTO accounts")) {
+    if (s.startsWith("INSERT OR IGNORE INTO accounts") || s.startsWith("INSERT INTO accounts") || s.startsWith("INSERT OR REPLACE INTO accounts")) {
       const id = String(p[0]);
-      if (!tables.accounts.has(id)) {
-        tables.accounts.set(id, {
-          id,
-          name: p[1] as string,
-          currency: p[2] as string,
-          type: "cash",
-          is_archived: 0,
-        });
+      const row = {
+        id,
+        name: p[1] as string,
+        currency: p[2] as string,
+        type: (p[3] as string) || "cash",
+        is_archived: Number(p[4] ?? 0),
+        include_in_net_worth: Number(p[5] ?? 1),
+        current_balance: Number(p[6] ?? 0),
+      };
+      if (s.startsWith("INSERT OR IGNORE") && tables.accounts.has(id)) {
+        return { changes: 0 };
       }
+      tables.accounts.set(id, row);
       return { changes: 1 };
     }
 

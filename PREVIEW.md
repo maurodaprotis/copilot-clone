@@ -1,22 +1,24 @@
-# Preview -- Categories + Budgets + Dashboard spending line
+# Preview — Cash Flow + Accounts (+ Categories/Budgets)
 
 ## URLs
 
 - Worker API: https://copilot-clone-api.maurodaprotis.workers.dev
 - Health: GET /health
-- Sync: POST /sync -- upsert | review | budget_upsert
+- Sync: POST /sync — upsert | review | budget_upsert | **account_upsert**
 - Categories: GET /categories?month=YYYY-MM
 - Spending: GET /dashboard/spending?month=YYYY-MM
+- **Cash Flow:** GET /cash-flow?month=YYYY-MM
+- **Accounts:** GET /accounts
 
 ## Naming
 
 - review_status: needs_review | reviewed | excluded (NOT pending)
 - pending is TxnStatus, separate from ReviewStatus
 
-## Click-test
+## Click-test (Paul)
 
-1. Categories: spent/budget/remaining USD; tap to edit budget.
-2. Transactions: add offline needs_review (no budget hit); Review then hits.
-3. Dashboard spending line vs budget pace; pending excluded.
+1. **Cash Flow** tab: Income / Spend / Net for selected month (USD). Prior-month comparison shown. needs_review, pending, transfers omitted; refunds net against spend.
+2. **More → Accounts:** list by type with account-ccy + USD balances; Net Worth total; + Add / tap row to edit; include_in_net_worth toggle.
+3. Categories / Dashboard still work as before (budgets + spending line).
 
 No rebalance UI. No Plaid/Postgres.

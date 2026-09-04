@@ -92,6 +92,15 @@ app.get("/dashboard/spending", async (c) => {
   return proxyDo(c, `/dashboard/spending${q}`);
 });
 
+
+app.get("/cash-flow", async (c) => {
+  const month = c.req.query("month");
+  const q = month ? `?month=${encodeURIComponent(month)}` : "";
+  return proxyDo(c, `/cash-flow${q}`);
+});
+
+app.get("/accounts", async (c) => proxyDo(c, "/accounts"));
+
 app.get("/do/health", async (c) => proxyDo(c, "/health"));
 
 export default app;

@@ -26,6 +26,13 @@ export interface Account {
   currency: string;
   type: "cash" | "bank" | "credit" | "investment" | "other";
   is_archived: boolean;
+  /** When false, omitted from net-worth total (default true). */
+  include_in_net_worth: boolean;
+  /**
+   * Manual opening / set balance in account currency.
+   * Displayed balance = current_balance + signed posted txn deltas.
+   */
+  current_balance: number;
 }
 
 export interface CategoryGroup {
