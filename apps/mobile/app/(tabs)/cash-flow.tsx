@@ -10,7 +10,7 @@ import {
 import { API_URL, DEMO_USER_ID } from "../../src/config";
 import { getCashFlowOverview } from "../../src/offline/cashflow";
 import { colors, radius, spacing, type } from "../../src/theme";
-import { Card, Screen, ScreenHeader } from "../../src/ui";
+import { Card, Screen, ScreenHeader, SegmentedControl } from "../../src/ui";
 
 function usd(n: number): string {
   const sign = n < 0 ? "-" : "";
@@ -72,23 +72,29 @@ export default function CashFlowScreen() {
           style={styles.chip}
           onPress={() => setMonth(shiftYearMonth(month, -1))}
         >
-          <Text style={styles.chipText}>← {priorYearMonth(month)}</Text>
+          <Text style={styles.chipText}>←</Text>
         </Pressable>
         <Text style={styles.monthLabel}>{month}</Text>
         <Pressable
           style={styles.chip}
           onPress={() => setMonth(shiftYearMonth(month, 1))}
         >
-          <Text style={styles.chipText}>{shiftYearMonth(month, 1)} →</Text>
+          <Text style={styles.chipText}>→</Text>
         </Pressable>
       </View>
+      <SegmentedControl
+        options={["1M", "3M", "YTD", "1Y"]}
+        value="1M"
+        onChange={() => undefined}
+        style={{ marginBottom: spacing.md }}
+      />
 
       <Card style={styles.hero}>
-        <Text style={styles.heroLabel}>Net income</Text>
+        <Text style={styles.heroLabel}>Net</Text>
         <Text
           style={[
             styles.heroValue,
-            { color: (data?.net ?? 0) < 0 ? colors.danger : colors.success },
+            { color: (data?.net ?? 0) < 0 ? colors.overBudgetRed : colors.incomeGreen },
           ]}
         >
           {usd(data?.net ?? 0)}
@@ -103,7 +109,7 @@ export default function CashFlowScreen() {
 
       <View style={styles.cards}>
         <Card style={[styles.statCard, styles.incomeCard]}>
-          <Text style={styles.cardLabel}>Income</Text>
+          <Text style={styles.cardLabel}>Inflow</Text>
           <Text style={styles.cardValue}>{usd(data?.income ?? 0)}</Text>
           {data ? (
             <Text style={styles.cardHint}>
@@ -112,7 +118,7 @@ export default function CashFlowScreen() {
           ) : null}
         </Card>
         <Card style={[styles.statCard, styles.spendCard]}>
-          <Text style={styles.cardLabel}>Spend</Text>
+          <Text style={styles.cardLabel}>Outflow</Text>
           <Text style={styles.cardValue}>{usd(data?.spend ?? 0)}</Text>
           {data ? (
             <Text style={styles.cardHint}>
@@ -138,7 +144,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   chip: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.bgCard,
     paddingHorizontal: spacing.sm,
     paddingVertical: 8,
     borderRadius: radius.pill,
@@ -153,8 +159,8 @@ const styles = StyleSheet.create({
   heroCmp: { ...type.subhead, marginTop: spacing.sm },
   cards: { flexDirection: "row", gap: spacing.sm },
   statCard: { flex: 1 },
-  incomeCard: { borderLeftWidth: 3, borderLeftColor: colors.success },
-  spendCard: { borderLeftWidth: 3, borderLeftColor: colors.warning },
+  incomeCard: {},
+  spendCard: {},
   cardLabel: { ...type.caption, marginBottom: 4 },
   cardValue: { ...type.title2 },
   cardHint: { ...type.footnote, marginTop: 6 },

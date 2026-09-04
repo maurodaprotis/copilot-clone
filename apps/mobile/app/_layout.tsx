@@ -10,7 +10,7 @@ import { colors, fontFamily } from "../src/theme";
 
 const headerOpts = {
   headerStyle: {
-    backgroundColor: colors.bg,
+    backgroundColor: colors.bgPage,
   },
   headerShadowVisible: false,
   headerTintColor: colors.primary,
@@ -21,7 +21,7 @@ const headerOpts = {
     fontSize: 17,
   },
   headerBackTitle: "Back",
-  contentStyle: { backgroundColor: colors.bg },
+  contentStyle: { backgroundColor: colors.bgPage },
 };
 
 export default function RootLayout() {
@@ -30,7 +30,17 @@ export default function RootLayout() {
       document.body.style.backgroundColor = colors.bg;
       document.body.style.fontFamily =
         fontFamily ??
-        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+        "Inter, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+      // Load Inter on web when available
+      const id = "copilot-inter-font";
+      if (!document.getElementById(id)) {
+        const link = document.createElement("link");
+        link.id = id;
+        link.rel = "stylesheet";
+        link.href =
+          "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap";
+        document.head.appendChild(link);
+      }
     }
 
     const sub = Linking.addEventListener("url", ({ url }) => {

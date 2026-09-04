@@ -7,15 +7,29 @@ type Props = {
   subtitle?: string;
   right?: ReactNode;
   large?: boolean;
+  badge?: string | number;
 };
 
-export function ScreenHeader({ title, subtitle, right, large = true }: Props) {
+export function ScreenHeader({
+  title,
+  subtitle,
+  right,
+  large = true,
+  badge,
+}: Props) {
   return (
     <View style={styles.wrap}>
       <View style={styles.row}>
-        <Text style={large ? type.largeTitle : type.title1} numberOfLines={1}>
-          {title}
-        </Text>
+        <View style={styles.titleRow}>
+          <Text style={large ? type.largeTitle : type.title1} numberOfLines={1}>
+            {title}
+          </Text>
+          {badge != null ? (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{badge}</Text>
+            </View>
+          ) : null}
+        </View>
         {right ? <View style={styles.right}>{right}</View> : null}
       </View>
       {subtitle ? <Text style={styles.sub}>{subtitle}</Text> : null}
@@ -24,13 +38,25 @@ export function ScreenHeader({ title, subtitle, right, large = true }: Props) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginBottom: spacing.md },
+  wrap: { marginBottom: spacing.lg },
   row: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: spacing.sm,
   },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
   right: { flexShrink: 0 },
-  sub: { ...type.subhead, marginTop: spacing.xxs, color: colors.textSecondary },
+  sub: { ...type.subhead, marginTop: spacing.xs, color: colors.textSecondary },
+  badge: {
+    backgroundColor: colors.accentBlueSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  badgeText: {
+    color: colors.accentBlue,
+    fontSize: 13,
+    fontWeight: "700",
+  },
 });

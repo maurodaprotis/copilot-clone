@@ -12,7 +12,6 @@ import {
   DEMO_ACCOUNT_CURRENCY,
   DEMO_ACCOUNT_ID,
   DEMO_REPORTING_CURRENCY,
-  API_URL,
 } from "../../src/config";
 import { addExpenseOffline } from "../../src/offline/addExpenseOffline";
 import {
@@ -39,11 +38,15 @@ import { colors, radius, spacing, type } from "../../src/theme";
 import {
   Card,
   Chip,
+  EmptySparkle,
   EmptyState,
   PrimaryButton,
   Screen,
   ScreenHeader,
+  SearchBar,
   SectionHeader,
+  SegmentedControl,
+  TxnRow,
 } from "../../src/ui";
 
 function money(amount: number, currency: string): string {
@@ -70,6 +73,8 @@ export default function TransactionsScreen() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [showComposer, setShowComposer] = useState(false);
+  const [filter, setFilter] = useState("All");
+  const [query, setQuery] = useState("");
 
   const [detail, setDetail] = useState<LocalTransaction | null>(null);
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -280,45 +285,57 @@ export default function TransactionsScreen() {
 
       {msg ? <Text style={styles.msg}>{msg}</Text> : null}
 
+      <SearchBar
+        value={query}
+        onChangeText={setQuery}
+        placeholder="Search merchants"
+        style={{ marginBottom: spacing.sm }}
+      />
+      <SegmentedControl
+        options={["All", "To Review", "Income", "Expenses"]}
+        value={filter}
+        onChange={setFilter}
+        style={{ marginBottom: spacing.md }}
+      />
+
       <SectionHeader title="To Review" count={pending.length} />
       {pending.length === 0 ? (
         <Card>
-          <EmptyState
-            icon="📥"
-            title="Nothing to review"
+          <EmptySparkle
+            title="You’re all caught up"
             body="New imports and offline expenses land here until you confirm them."
             ctaLabel="Add expense"
             onCta={() => setShowComposer(true)}
           />
         </Card>
       ) : (
-        pending.map((txn) => (
-          <Card key={txn.id} padded={false} style={styles.txnCard}>
-            <Pressable
-              style={styles.txnRow}
-              onPress={() => void openDetail(txn)}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.txnName}>{txn.note || "Expense"}</Text>
-                <Text style={styles.txnMeta}>
-                  {txn.category_id
+        pending
+          .filter((txn) =>
+            !query ||
+            (txn.note || "").toLowerCase().includes(query.toLowerCase()),
+          )
+          .map((txn) => (
+            <Card key={txn.id} padded={false} style={styles.txnCard}>
+              <TxnRow
+                merchant={txn.note || "Expense"}
+                account={
+                  (txn.category_id
                     ? categoryNames[txn.category_id] ?? txn.category_id
-                    : "Uncategorized"}
-                  {txn.synced ? "" : " · pending sync"}
-                </Text>
-              </View>
-              <Text style={styles.txnAmount}>
-                {money(txn.amount, txn.currency)}
-              </Text>
-              <PrimaryButton
-                label="Review"
-                variant="secondary"
-                onPress={() => void onReview(txn.id)}
-                style={styles.reviewBtn}
+                    : "Uncategorized") + (txn.synced ? "" : " · pending sync")
+                }
+                amountLabel={money(txn.amount, txn.currency)}
+                onPress={() => void openDetail(txn)}
+                trailing={
+                  <PrimaryButton
+                    label="Review"
+                    variant="secondary"
+                    onPress={() => void onReview(txn.id)}
+                    style={styles.reviewBtn}
+                  />
+                }
               />
-            </Pressable>
-          </Card>
-        ))
+            </Card>
+          ))
       )}
 
       <SectionHeader title="All" count={all.length} />
@@ -333,30 +350,30 @@ export default function TransactionsScreen() {
           />
         </Card>
       ) : (
-        all.map((txn) => (
-          <Card key={`all-${txn.id}`} padded={false} style={styles.txnCard}>
-            <Pressable
-              style={styles.txnRow}
-              onPress={() => void openDetail(txn)}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.txnName}>{txn.note || "—"}</Text>
-                <Text style={styles.txnMeta}>
-                  {txn.review_status}
-                  {txn.category_id
+        all
+          .filter((txn) => {
+            if (query && !(txn.note || "").toLowerCase().includes(query.toLowerCase()))
+              return false;
+            if (filter === "To Review") return txn.review_status === "needs_review";
+            if (filter === "Income") return txn.amount < 0; // domain: expenses positive in some stores — keep soft
+            if (filter === "Expenses") return true;
+            return true;
+          })
+          .map((txn) => (
+            <Card key={`all-${txn.id}`} padded={false} style={styles.txnCard}>
+              <TxnRow
+                merchant={txn.note || "—"}
+                account={`${txn.review_status}${
+                  txn.category_id
                     ? ` · ${categoryNames[txn.category_id] ?? txn.category_id}`
-                    : ""}
-                </Text>
-              </View>
-              <Text style={styles.txnAmount}>
-                {money(txn.amount, txn.currency)}
-              </Text>
-            </Pressable>
-          </Card>
-        ))
+                    : ""
+                }`}
+                amountLabel={money(txn.amount, txn.currency)}
+                onPress={() => void openDetail(txn)}
+              />
+            </Card>
+          ))
       )}
-
-      <Text style={styles.apiHint}>{API_URL.replace("https://", "")}</Text>
 
       <Modal visible={!!detail} animationType="slide" transparent>
         <View style={styles.modalBackdrop}>
@@ -440,12 +457,12 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
-    borderRadius: radius.md,
+    borderRadius: radius.input,
     paddingHorizontal: spacing.sm,
     paddingVertical: 12,
     marginBottom: spacing.sm,
-    backgroundColor: colors.chipBg,
-    color: colors.text,
+    backgroundColor: colors.bgInput,
+    color: colors.textPrimary,
     fontSize: 16,
   },
   chipRow: {
@@ -454,7 +471,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     marginBottom: spacing.sm,
   },
-  msg: { ...type.footnote, color: colors.text, marginBottom: spacing.sm },
+  msg: { ...type.footnote, color: colors.textPrimary, marginBottom: spacing.sm },
   txnCard: { marginBottom: spacing.sm },
   txnRow: {
     flexDirection: "row",

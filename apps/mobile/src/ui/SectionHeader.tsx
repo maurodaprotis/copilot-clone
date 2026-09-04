@@ -45,5 +45,5 @@ const styles = StyleSheet.create({
   },
   title: { ...type.title3, flex: 1 },
   count: { color: colors.textSecondary, fontWeight: "600" },
-  action: { ...type.callout, color: colors.primary, fontWeight: "600" },
+  action: { ...type.callout, color: colors.textSecondary, fontWeight: "600" },
 });

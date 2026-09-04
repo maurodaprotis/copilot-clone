@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
-import { Stack, useFocusEffect } from "expo-router";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
 import type { FxRate, FxSeries, UserSettings } from "@copilot-clone/domain";
 import {
   getSettingsLocal,
@@ -12,20 +12,27 @@ import {
 } from "../src/offline/settingsImport";
 import { colors, radius, spacing, type } from "../src/theme";
 import {
-  Card,
   Chip,
+  ListRow,
   PrimaryButton,
   Screen,
-  SectionHeader,
+  SegmentedControl,
+  SettingsDivider,
+  SettingsGroup,
+  Toggle,
 } from "../src/ui";
 
 const SERIES: FxSeries[] = ["official", "parallel", "custom"];
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [rates, setRates] = useState<FxRate[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [themeMode, setThemeMode] = useState("Light");
+  const [budgetingOn, setBudgetingOn] = useState(true);
+  const [rolloverOn, setRolloverOn] = useState(false);
   const [base, setBase] = useState("USD");
   const [quote, setQuote] = useState("ARS");
   const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10));
@@ -80,110 +87,164 @@ export default function SettingsScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Settings" }} />
+      <Stack.Screen
+        options={{
+          title: "Settings",
+          presentation: "modal",
+          headerRight: () => (
+            <Pressable onPress={() => router.back()} hitSlop={8}>
+              <Text style={styles.close}>✕</Text>
+            </Pressable>
+          ),
+        }}
+      />
       <Screen refreshing={false} onRefresh={() => void reload()}>
-        <Text style={styles.lead}>
-          Reporting currency, FX series, and manual rates — the same product
-          surface as Copilot Settings.
-        </Text>
+        <View style={styles.navPills}>
+          {["General", "Account", "Banks", "About"].map((p, i) => (
+            <View key={p} style={[styles.navPill, i === 0 && styles.navPillOn]}>
+              <Text style={[styles.navPillText, i === 0 && styles.navPillTextOn]}>
+                {p}
+              </Text>
+            </View>
+          ))}
+        </View>
 
-        <Text style={styles.groupLabel}>General</Text>
-        <Card>
-          <Text style={styles.label}>Reporting currency</Text>
+        <SettingsGroup label="Appearance">
           <View style={styles.row}>
-            {["USD", "ARS", "EUR"].map((c) => (
-              <Chip
-                key={c}
-                label={c}
-                selected={settings?.reporting_currency === c}
-                onPress={() => void saveSettings({ reporting_currency: c })}
-              />
-            ))}
+            <View style={styles.rowText}>
+              <Text style={styles.rowLabel}>Theme</Text>
+              <Text style={styles.rowDesc}>Customize how Copilot looks</Text>
+            </View>
+            <SegmentedControl
+              options={["Light", "Auto", "Dark"]}
+              value={themeMode}
+              onChange={setThemeMode}
+              tone="light"
+              style={{ flex: 0, minWidth: 168 }}
+            />
           </View>
+        </SettingsGroup>
 
-          <Text style={styles.label}>Default FX series</Text>
+        <SettingsGroup label="Budgeting">
           <View style={styles.row}>
+            <View style={styles.rowText}>
+              <Text style={styles.rowLabel}>Enable budgeting</Text>
+              <Text style={styles.rowDesc}>Set monthly budgets for categories</Text>
+            </View>
+            <Toggle value={budgetingOn} onChange={setBudgetingOn} />
+          </View>
+          <SettingsDivider />
+          <View style={styles.row}>
+            <View style={styles.rowText}>
+              <Text style={styles.rowLabel}>Enable rollover</Text>
+              <Text style={styles.rowDesc}>Allow budgets across months</Text>
+            </View>
+            <Toggle value={rolloverOn} onChange={setRolloverOn} />
+          </View>
+        </SettingsGroup>
+
+        <SettingsGroup label="Reporting & FX">
+          <View style={[styles.row, styles.col]}>
+            <View style={styles.rowText}>
+              <Text style={styles.rowLabel}>Reporting currency</Text>
+              <Text style={styles.rowDesc}>USD-first · ARS supported</Text>
+            </View>
+            <View style={styles.pills}>
+              {["USD", "ARS", "EUR"].map((c) => (
+                <Chip
+                  key={c}
+                  label={c}
+                  tone="filled"
+                  selected={settings?.reporting_currency === c}
+                  onPress={() => void saveSettings({ reporting_currency: c })}
+                />
+              ))}
+            </View>
+          </View>
+          <SettingsDivider />
+          <View style={[styles.row, styles.col]}>
+            <View style={styles.rowText}>
+              <Text style={styles.rowLabel}>Default FX series</Text>
+              <Text style={styles.rowDesc}>
+                Used when converting to reporting currency
+              </Text>
+            </View>
+            <View style={styles.pills}>
+              {SERIES.map((s) => (
+                <Chip
+                  key={s}
+                  label={s}
+                  tone="filled"
+                  selected={settings?.default_fx_series === s}
+                  onPress={() => void saveSettings({ default_fx_series: s })}
+                />
+              ))}
+            </View>
+          </View>
+          <SettingsDivider />
+          <ListRow
+            title="Timezone"
+            subtitle={settings?.timezone ?? "America/Argentina/Salta"}
+            chevron
+          />
+          <SettingsDivider />
+          <ListRow
+            title="Locale"
+            subtitle={settings?.locale ?? "en-US"}
+            chevron
+          />
+        </SettingsGroup>
+
+        <SettingsGroup label="Manual FX rates">
+          <View style={styles.fieldGrid}>
+            <View style={styles.fieldCol}>
+              <Text style={styles.fieldLabel}>Base</Text>
+              <TextInput
+                style={styles.field}
+                value={base}
+                onChangeText={setBase}
+                autoCapitalize="characters"
+                placeholderTextColor={colors.textTertiary}
+              />
+            </View>
+            <View style={styles.fieldCol}>
+              <Text style={styles.fieldLabel}>Quote</Text>
+              <TextInput
+                style={styles.field}
+                value={quote}
+                onChangeText={setQuote}
+                autoCapitalize="characters"
+                placeholderTextColor={colors.textTertiary}
+              />
+            </View>
+          </View>
+          <View style={styles.fieldGrid}>
+            <View style={styles.fieldCol}>
+              <Text style={styles.fieldLabel}>Date</Text>
+              <TextInput
+                style={styles.field}
+                value={asOf}
+                onChangeText={setAsOf}
+                placeholderTextColor={colors.textTertiary}
+              />
+            </View>
+            <View style={styles.fieldCol}>
+              <Text style={styles.fieldLabel}>Rate</Text>
+              <TextInput
+                style={styles.field}
+                value={rate}
+                onChangeText={setRate}
+                keyboardType="decimal-pad"
+                placeholderTextColor={colors.textTertiary}
+              />
+            </View>
+          </View>
+          <View style={[styles.pills, { paddingHorizontal: spacing.lg, marginBottom: spacing.sm }]}>
             {SERIES.map((s) => (
               <Chip
                 key={s}
                 label={s}
-                selected={settings?.default_fx_series === s}
-                onPress={() => void saveSettings({ default_fx_series: s })}
-              />
-            ))}
-          </View>
-
-          <Text style={styles.label}>Timezone</Text>
-          <TextInput
-            style={styles.input}
-            value={settings?.timezone ?? ""}
-            onChangeText={(timezone) =>
-              setSettings((p) => (p ? { ...p, timezone } : p))
-            }
-            onBlur={() =>
-              settings && void saveSettings({ timezone: settings.timezone })
-            }
-            placeholder="America/Argentina/Salta"
-            placeholderTextColor={colors.textTertiary}
-          />
-
-          <Text style={styles.label}>Locale</Text>
-          <TextInput
-            style={styles.input}
-            value={settings?.locale ?? ""}
-            onChangeText={(locale) =>
-              setSettings((p) => (p ? { ...p, locale } : p))
-            }
-            onBlur={() =>
-              settings && void saveSettings({ locale: settings.locale })
-            }
-            placeholder="en-US"
-            placeholderTextColor={colors.textTertiary}
-          />
-        </Card>
-
-        <SectionHeader title="Manual FX rates" />
-        <Card>
-          <View style={styles.row}>
-            <TextInput
-              style={[styles.input, styles.flex]}
-              value={base}
-              onChangeText={setBase}
-              placeholder="Base"
-              autoCapitalize="characters"
-              placeholderTextColor={colors.textTertiary}
-            />
-            <TextInput
-              style={[styles.input, styles.flex]}
-              value={quote}
-              onChangeText={setQuote}
-              placeholder="Quote"
-              autoCapitalize="characters"
-              placeholderTextColor={colors.textTertiary}
-            />
-          </View>
-          <View style={styles.row}>
-            <TextInput
-              style={[styles.input, styles.flex]}
-              value={asOf}
-              onChangeText={setAsOf}
-              placeholder="as_of"
-              placeholderTextColor={colors.textTertiary}
-            />
-            <TextInput
-              style={[styles.input, styles.flex]}
-              value={rate}
-              onChangeText={setRate}
-              placeholder="Rate"
-              keyboardType="decimal-pad"
-              placeholderTextColor={colors.textTertiary}
-            />
-          </View>
-          <View style={styles.row}>
-            {SERIES.map((s) => (
-              <Chip
-                key={s}
-                label={s}
+                tone="filled"
                 selected={book === s}
                 onPress={() => setBook(s)}
               />
@@ -193,22 +254,18 @@ export default function SettingsScreen() {
             label="Save FX rate"
             onPress={() => void onAddFx()}
             loading={busy}
+            style={styles.saveBtn}
           />
           {msg ? <Text style={styles.msg}>{msg}</Text> : null}
-        </Card>
+        </SettingsGroup>
 
-        {rates.slice(0, 12).map((r) => (
-          <Card
-            key={`${r.from}:${r.to}:${r.on_date}:${r.rate_book}`}
-            style={styles.rateCard}
-          >
-            <Text style={styles.rateTitle}>
-              {r.from}/{r.to} = {r.rate}
-            </Text>
-            <Text style={styles.rateMeta}>
-              {r.on_date} · {r.rate_book} · {r.source ?? "manual"}
-            </Text>
-          </Card>
+        {rates.slice(0, 8).map((r) => (
+          <SettingsGroup key={`${r.from}:${r.to}:${r.on_date}:${r.rate_book}`}>
+            <ListRow
+              title={`${r.from}/${r.to} = ${r.rate}`}
+              subtitle={`${r.on_date} · ${r.rate_book} · ${r.source ?? "manual"}`}
+            />
+          </SettingsGroup>
         ))}
       </Screen>
     </>
@@ -216,35 +273,73 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  lead: { ...type.subhead, marginBottom: spacing.lg, lineHeight: 18 },
-  groupLabel: { ...type.caption, marginBottom: spacing.sm, marginLeft: 4 },
-  label: {
-    ...type.footnote,
-    fontWeight: "600",
-    marginBottom: 6,
-    marginTop: spacing.sm,
-    color: colors.text,
+  close: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    backgroundColor: colors.bgMuted,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    textAlign: "center",
+    lineHeight: 30,
+    overflow: "hidden",
   },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 12,
-    marginBottom: spacing.sm,
-    backgroundColor: colors.chipBg,
-    color: colors.text,
-    fontSize: 15,
-  },
-  flex: { flex: 1 },
-  row: {
+  navPills: {
     flexDirection: "row",
-    gap: spacing.xs,
-    marginBottom: spacing.sm,
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
     flexWrap: "wrap",
   },
-  msg: { ...type.footnote, marginTop: spacing.sm, color: colors.text },
-  rateCard: { marginBottom: spacing.sm },
-  rateTitle: { ...type.headline },
-  rateMeta: { ...type.footnote, marginTop: 4 },
+  navPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  navPillOn: {
+    backgroundColor: colors.accentBlueSoft,
+    borderColor: "transparent",
+  },
+  navPillText: { fontSize: 13, fontWeight: "600", color: colors.textSecondary },
+  navPillTextOn: { color: colors.accentBlue },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 14,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
+  },
+  col: { flexDirection: "column", alignItems: "stretch" },
+  rowText: { flex: 1, minWidth: 0 },
+  rowLabel: { ...type.headline },
+  rowDesc: { ...type.footnote, marginTop: 2, color: colors.textTertiary },
+  pills: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: 10 },
+  fieldGrid: {
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: spacing.lg,
+    paddingTop: 12,
+  },
+  fieldCol: { flex: 1 },
+  fieldLabel: { ...type.sectionLabel, marginBottom: 6, marginLeft: 0 },
+  field: {
+    height: 40,
+    borderRadius: radius.input,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    backgroundColor: colors.bgInput,
+    paddingHorizontal: 12,
+    color: colors.textPrimary,
+    fontSize: 14,
+  },
+  saveBtn: { marginHorizontal: spacing.lg, marginBottom: spacing.lg, marginTop: 4 },
+  msg: {
+    ...type.footnote,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    color: colors.textPrimary,
+  },
 });

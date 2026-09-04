@@ -8,7 +8,7 @@ import {
 } from "react-native";
 import { colors, radius, spacing, type } from "../theme";
 
-type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Variant = "primary" | "secondary" | "ghost" | "danger" | "accent";
 
 type Props = {
   label: string;
@@ -19,6 +19,7 @@ type Props = {
   style?: StyleProp<ViewStyle>;
 };
 
+/** Primary = navy fill (Copilot). Ghost = white outline. Accent = blue CTA. */
 export function PrimaryButton({
   label,
   onPress,
@@ -36,6 +37,7 @@ export function PrimaryButton({
       style={({ pressed }) => [
         styles.base,
         v.bg,
+        v.border,
         (disabled || loading) && styles.disabled,
         pressed && !disabled && v.pressed,
         style,
@@ -50,9 +52,13 @@ export function PrimaryButton({
   );
 }
 
+export function GhostButton(props: Omit<Props, "variant">) {
+  return <PrimaryButton {...props} variant="ghost" />;
+}
+
 const styles = StyleSheet.create({
   base: {
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
     paddingVertical: 12,
     borderRadius: radius.md,
     alignItems: "center",
@@ -65,23 +71,33 @@ const styles = StyleSheet.create({
 
 const variants = {
   primary: {
-    bg: { backgroundColor: colors.primary },
+    bg: { backgroundColor: colors.navy },
+    border: {},
+    pressed: { opacity: 0.9 },
+    text: { color: colors.textInverse },
+  },
+  accent: {
+    bg: { backgroundColor: colors.accentBlue },
+    border: {},
     pressed: { backgroundColor: colors.primaryPressed },
-    text: { color: "#fff" },
+    text: { color: colors.textInverse },
   },
   secondary: {
-    bg: { backgroundColor: colors.success },
+    bg: { backgroundColor: colors.incomeGreen },
+    border: {},
     pressed: { opacity: 0.9 },
-    text: { color: "#fff" },
+    text: { color: colors.textInverse },
   },
   ghost: {
-    bg: { backgroundColor: colors.chipBg },
+    bg: { backgroundColor: colors.bgCard },
+    border: { borderWidth: 1, borderColor: colors.borderSubtle },
     pressed: { opacity: 0.85 },
-    text: { color: colors.text },
+    text: { color: colors.textPrimary },
   },
   danger: {
-    bg: { backgroundColor: colors.danger },
+    bg: { backgroundColor: colors.overBudgetRed },
+    border: {},
     pressed: { opacity: 0.9 },
-    text: { color: "#fff" },
+    text: { color: colors.textInverse },
   },
 } as const;
