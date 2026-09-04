@@ -7,7 +7,7 @@ const apiUrl = (process.argv[2] || process.env.API_URL || "http://127.0.0.1:8787
 const userId = process.env.USER_ID || "paul-smoke";
 
 const id = crypto.randomUUID();
-const fingerprint = `acc-cash-ars|50.0000|USD|regular|2026-09-04|smoke cafe|`;
+const fingerprint = `acc-cash-ars|50.0000|USD|regular|2026-09-04|smoke cafe ${id}|`;
 
 const item = {
   op: "upsert",
@@ -20,7 +20,7 @@ const item = {
   is_refund: false,
   review_status: "needs_review",
   posted_at: "2026-09-04T15:00:00.000Z",
-  note: "smoke cafe",
+  note: `smoke cafe ${id.slice(0, 8)}`,
   fingerprint,
   account_currency: "ARS",
   reporting_currency: "USD",
@@ -75,7 +75,8 @@ async function main() {
     headers: { "x-user-id": userId },
   });
   const listBody = await listRes.json();
-  const found = (listBody.transactions || []).find((t) => t.id === id);
+  const savedId = (syncBody.saved && syncBody.saved[0]) || id;
+  const found = (listBody.transactions || []).find((t) => t.id === id || t.id === savedId);
   console.log("transactions count", (listBody.transactions || []).length);
   console.log("found", found ? { id: found.id, review_status: found.review_status, amount: found.amount, amount_account: found.amount_account } : null);
 
@@ -98,7 +99,7 @@ async function main() {
       "x-user-id": userId,
     },
     body: JSON.stringify({
-      items: [{ op: "review", id, review_status: "reviewed", updated_at: new Date().toISOString() }],
+      items: [{ op: "review", id: found.id, review_status: "reviewed", updated_at: new Date().toISOString() }],
     }),
   });
   console.log("review", reviewRes.status, await reviewRes.json());
