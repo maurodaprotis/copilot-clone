@@ -1,45 +1,115 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
+import { colors, radius, spacing, type } from "../../src/theme";
+import { Card, ListRow, Screen, ScreenHeader } from "../../src/ui";
+
+const SECTIONS: {
+  title: string;
+  items: { title: string; subtitle: string; href: string; icon: string }[];
+}[] = [
+  {
+    title: "Money",
+    items: [
+      {
+        title: "Accounts",
+        subtitle: "Balances · net worth",
+        href: "/accounts",
+        icon: "🏦",
+      },
+      {
+        title: "Recurrings",
+        subtitle: "Bills · income · templates",
+        href: "/recurrings",
+        icon: "🔁",
+      },
+    ],
+  },
+  {
+    title: "Organize",
+    items: [
+      {
+        title: "Name Rules",
+        subtitle: "Auto-categorize by merchant",
+        href: "/rules",
+        icon: "✨",
+      },
+      {
+        title: "Tags",
+        subtitle: "Labels without budget impact",
+        href: "/tags",
+        icon: "🏷",
+      },
+    ],
+  },
+  {
+    title: "Data",
+    items: [
+      {
+        title: "Import",
+        subtitle: "Bank CSV → needs review",
+        href: "/import",
+        icon: "📄",
+      },
+      {
+        title: "Settings",
+        subtitle: "Currency · FX · locale",
+        href: "/settings",
+        icon: "⚙️",
+      },
+    ],
+  },
+];
 
 export default function MoreScreen() {
   const router = useRouter();
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>More</Text>
-      <Text style={styles.sub}>Accounts, recurrings, settings, import, rules, tags</Text>
-      <Pressable style={styles.row} onPress={() => router.push("/accounts")}>
-        <Text style={styles.rowTitle}>Accounts</Text>
-        <Text style={styles.rowHint}>Manual accounts by type · balances · net worth</Text>
-      </Pressable>
-      <Pressable style={styles.row} onPress={() => router.push("/recurrings")}>
-        <Text style={styles.rowTitle}>Recurrings</Text>
-        <Text style={styles.rowHint}>Bills / income templates · next_expected_date · match reviewed txns</Text>
-      </Pressable>
-      <Pressable style={styles.row} onPress={() => router.push("/settings")}>
-        <Text style={styles.rowTitle}>Settings</Text>
-        <Text style={styles.rowHint}>Reporting currency · FX series · manual rates · locale</Text>
-      </Pressable>
-      <Pressable style={styles.row} onPress={() => router.push("/import")}>
-        <Text style={styles.rowTitle}>Import CSV</Text>
-        <Text style={styles.rowHint}>Bank CSV · mapping · commit → needs_review</Text>
-      </Pressable>
-      <Pressable style={styles.row} onPress={() => router.push("/rules")}>
-        <Text style={styles.rowTitle}>Name Rules</Text>
-        <Text style={styles.rowHint}>exact/contains → category · apply on create/sync</Text>
-      </Pressable>
-      <Pressable style={styles.row} onPress={() => router.push("/tags")}>
-        <Text style={styles.rowTitle}>Tags</Text>
-        <Text style={styles.rowHint}>CRUD tags · assign on Transactions</Text>
-      </Pressable>
-    </View>
+    <Screen scroll>
+      <ScreenHeader title="More" subtitle="Accounts, bills, import, and settings" />
+      {SECTIONS.map((section) => (
+        <View key={section.title} style={styles.section}>
+          <Text style={styles.sectionTitle}>{section.title}</Text>
+          <Card padded={false}>
+            {section.items.map((item, i) => (
+              <View key={item.href}>
+                <ListRow
+                  title={item.title}
+                  subtitle={item.subtitle}
+                  chevron
+                  left={<Text style={styles.icon}>{item.icon}</Text>}
+                  onPress={() => router.push(item.href as never)}
+                />
+                {i < section.items.length - 1 ? (
+                  <View style={styles.divider} />
+                ) : null}
+              </View>
+            ))}
+          </Card>
+        </View>
+      ))}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, backgroundColor: "#f7f7f8" },
-  title: { fontSize: 24, fontWeight: "700", marginBottom: 4 },
-  sub: { color: "#666", marginBottom: 20, fontSize: 13 },
-  row: { backgroundColor: "#fff", borderRadius: 12, padding: 16, marginBottom: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: "#e2e2e6" },
-  rowTitle: { fontSize: 16, fontWeight: "700", marginBottom: 4 },
-  rowHint: { fontSize: 12, color: "#64748b" },
+  section: { marginBottom: spacing.lg },
+  sectionTitle: {
+    ...type.caption,
+    marginBottom: spacing.sm,
+    marginLeft: 4,
+  },
+  icon: {
+    fontSize: 18,
+    width: 32,
+    height: 32,
+    textAlign: "center",
+    lineHeight: 32,
+    backgroundColor: colors.chipBg,
+    borderRadius: radius.md,
+    overflow: "hidden",
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.divider,
+    marginLeft: 56,
+  },
 });

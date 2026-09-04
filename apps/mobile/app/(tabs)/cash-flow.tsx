@@ -1,12 +1,5 @@
 import { useCallback, useState } from "react";
-import {
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import {
   currentYearMonth,
@@ -16,6 +9,8 @@ import {
 } from "@copilot-clone/domain";
 import { API_URL, DEMO_USER_ID } from "../../src/config";
 import { getCashFlowOverview } from "../../src/offline/cashflow";
+import { colors, radius, spacing, type } from "../../src/theme";
+import { Card, Screen, ScreenHeader } from "../../src/ui";
 
 function usd(n: number): string {
   const sign = n < 0 ? "-" : "";
@@ -66,18 +61,11 @@ export default function CashFlowScreen() {
   );
 
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={loading} onRefresh={() => void reload()} />
-      }
-    >
-      <Text style={styles.title}>Cash Flow</Text>
-      <Text style={styles.sub}>
-        Reporting USD · {source === "api" ? "live Worker" : "local SQLite"} ·
-        transfers omitted · needs_review / pending excluded
-      </Text>
+    <Screen refreshing={loading} onRefresh={() => void reload()}>
+      <ScreenHeader
+        title="Cash Flow"
+        subtitle={`${source === "api" ? "Live" : "Local"} · transfers omitted`}
+      />
 
       <View style={styles.monthRow}>
         <Pressable
@@ -95,12 +83,12 @@ export default function CashFlowScreen() {
         </Pressable>
       </View>
 
-      <View style={styles.hero}>
-        <Text style={styles.heroLabel}>Net Income</Text>
+      <Card style={styles.hero}>
+        <Text style={styles.heroLabel}>Net income</Text>
         <Text
           style={[
             styles.heroValue,
-            { color: (data?.net ?? 0) < 0 ? "#ef4444" : "#0d9488" },
+            { color: (data?.net ?? 0) < 0 ? colors.danger : colors.success },
           ]}
         >
           {usd(data?.net ?? 0)}
@@ -111,10 +99,10 @@ export default function CashFlowScreen() {
             {pct(data.net_delta_pct)})
           </Text>
         ) : null}
-      </View>
+      </Card>
 
       <View style={styles.cards}>
-        <View style={[styles.card, styles.incomeCard]}>
+        <Card style={[styles.statCard, styles.incomeCard]}>
           <Text style={styles.cardLabel}>Income</Text>
           <Text style={styles.cardValue}>{usd(data?.income ?? 0)}</Text>
           {data ? (
@@ -122,8 +110,8 @@ export default function CashFlowScreen() {
               prior {usd(data.prior.income)} · Δ {usd(data.income_delta)}
             </Text>
           ) : null}
-        </View>
-        <View style={[styles.card, styles.spendCard]}>
+        </Card>
+        <Card style={[styles.statCard, styles.spendCard]}>
           <Text style={styles.cardLabel}>Spend</Text>
           <Text style={styles.cardValue}>{usd(data?.spend ?? 0)}</Text>
           {data ? (
@@ -131,63 +119,44 @@ export default function CashFlowScreen() {
               prior {usd(data.prior.spend)} · Δ {usd(data.spend_delta)}
             </Text>
           ) : null}
-        </View>
+        </Card>
       </View>
 
       <Text style={styles.rules}>
-        Rules: income = type income; spend = regular non-excluded (refunds net);
-        transfers omitted. Net = Income − Spend.
+        Income = type income. Spend = regular non-excluded (refunds net).
+        Transfers omitted. Net = Income − Spend.
       </Text>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: "#f7f7f8" },
-  container: { padding: 20, paddingBottom: 48 },
-  title: { fontSize: 24, fontWeight: "700", marginBottom: 4 },
-  sub: { color: "#666", marginBottom: 16, fontSize: 12 },
   monthRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 16,
+    marginBottom: spacing.md,
   },
   chip: {
-    backgroundColor: "#fff",
-    paddingHorizontal: 12,
+    backgroundColor: colors.card,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 8,
-    borderRadius: 999,
+    borderRadius: radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#e2e2e6",
+    borderColor: colors.border,
   },
-  chipText: { fontSize: 12, fontWeight: "600", color: "#334" },
-  monthLabel: { fontSize: 16, fontWeight: "700" },
-  hero: {
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    padding: 20,
-    marginBottom: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#e2e2e6",
-    alignItems: "center",
-  },
-  heroLabel: { fontSize: 12, color: "#888", marginBottom: 6 },
-  heroValue: { fontSize: 36, fontWeight: "800" },
-  heroCmp: { marginTop: 8, fontSize: 13, color: "#64748b" },
-  cards: { flexDirection: "row", gap: 10 },
-  card: {
-    flex: 1,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#e2e2e6",
-  },
-  incomeCard: { borderLeftWidth: 3, borderLeftColor: "#10b981" },
-  spendCard: { borderLeftWidth: 3, borderLeftColor: "#f59e0b" },
-  cardLabel: { fontSize: 11, color: "#888", marginBottom: 4 },
-  cardValue: { fontSize: 22, fontWeight: "700" },
-  cardHint: { marginTop: 6, fontSize: 11, color: "#888" },
-  rules: { marginTop: 18, fontSize: 12, color: "#94a3b8", lineHeight: 18 },
+  chipText: { ...type.footnote, fontWeight: "600", color: colors.text },
+  monthLabel: { ...type.headline },
+  hero: { alignItems: "center", marginBottom: spacing.md, paddingVertical: spacing.xl },
+  heroLabel: { ...type.caption, marginBottom: spacing.xs },
+  heroValue: { ...type.moneyHero },
+  heroCmp: { ...type.subhead, marginTop: spacing.sm },
+  cards: { flexDirection: "row", gap: spacing.sm },
+  statCard: { flex: 1 },
+  incomeCard: { borderLeftWidth: 3, borderLeftColor: colors.success },
+  spendCard: { borderLeftWidth: 3, borderLeftColor: colors.warning },
+  cardLabel: { ...type.caption, marginBottom: 4 },
+  cardValue: { ...type.title2 },
+  cardHint: { ...type.footnote, marginTop: 6 },
+  rules: { ...type.footnote, marginTop: spacing.lg, lineHeight: 18 },
 });

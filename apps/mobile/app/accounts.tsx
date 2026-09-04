@@ -141,12 +141,12 @@ export default function AccountsScreen() {
           title: "Accounts",
           headerLeft: () => (
             <Pressable onPress={() => router.back()} style={{ padding: 8 }}>
-              <Text style={{ color: "#1a1a2e", fontWeight: "600" }}>Back</Text>
+              <Text style={{ color: "#2F6BFF", fontWeight: "600" }}>Back</Text>
             </Pressable>
           ),
           headerRight: () => (
             <Pressable onPress={openCreate} style={{ padding: 8 }}>
-              <Text style={{ color: "#1a1a2e", fontWeight: "700" }}>+ Add</Text>
+              <Text style={{ color: "#2F6BFF", fontWeight: "700" }}>+ Add</Text>
             </Pressable>
           ),
         }}
@@ -163,7 +163,7 @@ export default function AccountsScreen() {
           <Text
             style={[
               styles.nwValue,
-              { color: nw < 0 ? "#ef4444" : "#0d9488" },
+              { color: nw < 0 ? "#ef4444" : "#22C55E" },
             ]}
           >
             {usd(nw)}
@@ -298,7 +298,7 @@ export default function AccountsScreen() {
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: "#f7f7f8" },
+  scroll: { flex: 1, backgroundColor: "#F5F7FA" },
   container: { padding: 20, paddingBottom: 48 },
   nwCard: {
     backgroundColor: "#fff",
@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "#f1f5f9",
   },
-  typeChipOn: { backgroundColor: "#1a1a2e" },
+  typeChipOn: { backgroundColor: "#2F6BFF" },
   typeChipText: { fontSize: 12, fontWeight: "600", color: "#334" },
   typeChipTextOn: { color: "#fff" },
   switchRow: {
@@ -376,7 +376,7 @@ const styles = StyleSheet.create({
   },
   modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10 },
   btn: {
-    backgroundColor: "#1a1a2e",
+    backgroundColor: "#2F6BFF",
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 8,

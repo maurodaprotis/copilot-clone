@@ -96,7 +96,7 @@ export default function TagsScreen() {
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: "#f7f7f8" },
+  scroll: { flex: 1, backgroundColor: "#F5F7FA" },
   container: { padding: 20, paddingBottom: 48 },
   sub: { color: "#666", marginBottom: 16, fontSize: 12 },
   card: {
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   btn: {
-    backgroundColor: "#1a1a2e",
+    backgroundColor: "#2F6BFF",
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: "center",

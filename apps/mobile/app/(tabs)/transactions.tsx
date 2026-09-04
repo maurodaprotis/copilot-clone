@@ -1,10 +1,7 @@
 import { useCallback, useState } from "react";
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
-  RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -38,6 +35,28 @@ import {
 import type { Tag } from "@copilot-clone/domain";
 import { syncOutbox } from "../../src/offline/syncOutbox";
 import { createApiTransport } from "../../src/sync/apiTransport";
+import { colors, radius, spacing, type } from "../../src/theme";
+import {
+  Card,
+  Chip,
+  EmptyState,
+  PrimaryButton,
+  Screen,
+  ScreenHeader,
+  SectionHeader,
+} from "../../src/ui";
+
+function money(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${currency} ${amount.toFixed(2)}`;
+  }
+}
 
 export default function TransactionsScreen() {
   const [pending, setPending] = useState<LocalTransaction[]>([]);
@@ -47,11 +66,10 @@ export default function TransactionsScreen() {
   const [note, setNote] = useState("Café offline");
   const [currency, setCurrency] = useState("USD");
   const [categoryId, setCategoryId] = useState("cat-dining");
-  const [categoryNames, setCategoryNames] = useState<Record<string, string>>(
-    {},
-  );
+  const [categoryNames, setCategoryNames] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [showComposer, setShowComposer] = useState(false);
 
   const [detail, setDetail] = useState<LocalTransaction | null>(null);
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -125,9 +143,7 @@ export default function TransactionsScreen() {
         ],
       });
       await syncOutbox(createApiTransport());
-      setSplitMsg(
-        `Split ${amounts[0]} / ${amounts[1]} · budgets use legs (not parent)`,
-      );
+      setSplitMsg(`Split ${amounts[0]} / ${amounts[1]}`);
       await reload();
     } catch (e) {
       setSplitMsg(e instanceof Error ? e.message : String(e));
@@ -155,7 +171,8 @@ export default function TransactionsScreen() {
         note: note || null,
         rate_book: { "USD:ARS:2026-09-04": 1400 },
       });
-      setMsg(`Added offline pending txn ${transactionId.slice(0, 8)}…`);
+      setMsg(`Added ${transactionId.slice(0, 8)}…`);
+      setShowComposer(false);
       await reload();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
@@ -169,11 +186,7 @@ export default function TransactionsScreen() {
     setMsg(null);
     try {
       const result = await syncOutbox(createApiTransport());
-      setMsg(
-        result.pushed > 0
-          ? `Pushed ${result.pushed} to UserDO via ${API_URL}`
-          : "Outbox empty",
-      );
+      setMsg(result.pushed > 0 ? `Synced ${result.pushed}` : "Outbox empty");
       await reload();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
@@ -194,290 +207,283 @@ export default function TransactionsScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={false} onRefresh={() => void reload()} />
-      }
-    >
-      <Text style={styles.title}>Transactions</Text>
-      <Text style={styles.sub}>
-        Inbox · outbox {outboxCount} · tap row for tags/splits · API{" "}
-        {API_URL.replace("https://", "")}
-      </Text>
-
-      <View style={styles.form}>
-        <Text style={styles.label}>Add expense (works offline)</Text>
-        <TextInput
-          style={styles.input}
-          value={amount}
-          onChangeText={setAmount}
-          keyboardType="decimal-pad"
-          placeholder="Amount"
-        />
-        <TextInput
-          style={styles.input}
-          value={currency}
-          onChangeText={setCurrency}
-          placeholder="Currency"
-          autoCapitalize="characters"
-        />
-        <TextInput
-          style={styles.input}
-          value={note}
-          onChangeText={setNote}
-          placeholder="Name / note (Name Rules match this)"
-        />
-        <Text style={styles.catLabel}>Category (hits budget after Review)</Text>
-        <View style={styles.chipRow}>
-          {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map(
-            (id) => (
-              <Pressable
-                key={id}
-                style={[styles.chip, categoryId === id && styles.chipOn]}
-                onPress={() => setCategoryId(id)}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    categoryId === id && styles.chipTextOn,
-                  ]}
-                >
-                  {categoryNames[id] ?? id}
-                </Text>
-              </Pressable>
-            ),
-          )}
-        </View>
-        <View style={styles.row}>
-          <Pressable style={styles.btn} onPress={() => void onAddOffline()} disabled={busy}>
-            <Text style={styles.btnText}>Add offline</Text>
-          </Pressable>
-          <Pressable style={[styles.btn, styles.btnSecondary]} onPress={() => void onSync()} disabled={busy}>
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Sync</Text>}
-          </Pressable>
-        </View>
-        {msg ? <Text style={styles.msg}>{msg}</Text> : null}
-      </View>
-
-      <Text style={styles.section}>To Review ({pending.length})</Text>
-      {pending.map((txn) => (
-        <Pressable key={txn.id} style={styles.card} onPress={() => void openDetail(txn)}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>
-              {txn.currency} {txn.amount.toFixed(2)}
-              {txn.synced ? " · synced" : " · pending sync"}
-            </Text>
-            <Text style={styles.cardMeta}>
-              {txn.note || "Expense"} ·{" "}
-              {txn.category_id
-                ? categoryNames[txn.category_id] ?? txn.category_id
-                : "uncategorized"}{" "}
-              · needs review
-            </Text>
+    <Screen refreshing={false} onRefresh={() => void reload()}>
+      <ScreenHeader
+        title="Transactions"
+        subtitle={outboxCount ? `${outboxCount} in outbox` : "Inbox & history"}
+        right={
+          <View style={styles.headerActions}>
+            <PrimaryButton
+              label="Sync"
+              variant="ghost"
+              onPress={() => void onSync()}
+              loading={busy}
+              style={styles.smallBtn}
+            />
+            <PrimaryButton
+              label="+ Add"
+              onPress={() => setShowComposer((v) => !v)}
+              style={styles.smallBtn}
+            />
           </View>
-          <Pressable style={styles.reviewBtn} onPress={() => void onReview(txn.id)}>
-            <Text style={styles.reviewText}>Review</Text>
-          </Pressable>
-        </Pressable>
-      ))}
+        }
+      />
 
-      <Text style={styles.section}>All ({all.length})</Text>
-      {all.map((txn) => (
-        <Pressable
-          key={`all-${txn.id}`}
-          style={[styles.card, styles.cardMuted]}
-          onPress={() => void openDetail(txn)}
-        >
-          <Text style={styles.cardTitle}>
-            {txn.currency} {txn.amount.toFixed(2)} · {txn.review_status}
-          </Text>
-          <Text style={styles.cardMeta}>
-            {txn.note || "—"} ·{" "}
-            {txn.category_id
-              ? categoryNames[txn.category_id] ?? txn.category_id
-              : "—"}{" "}
-            · synced={txn.synced}
-          </Text>
-        </Pressable>
-      ))}
+      {showComposer ? (
+        <Card style={styles.composer}>
+          <Text style={styles.composerTitle}>New expense</Text>
+          <Text style={styles.label}>Amount</Text>
+          <TextInput
+            style={styles.input}
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="decimal-pad"
+            placeholder="0.00"
+            placeholderTextColor={colors.textTertiary}
+          />
+          <Text style={styles.label}>Currency</Text>
+          <TextInput
+            style={styles.input}
+            value={currency}
+            onChangeText={setCurrency}
+            autoCapitalize="characters"
+            placeholderTextColor={colors.textTertiary}
+          />
+          <Text style={styles.label}>Name</Text>
+          <TextInput
+            style={styles.input}
+            value={note}
+            onChangeText={setNote}
+            placeholder="Merchant or note"
+            placeholderTextColor={colors.textTertiary}
+          />
+          <Text style={styles.label}>Category</Text>
+          <View style={styles.chipRow}>
+            {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map(
+              (id) => (
+                <Chip
+                  key={id}
+                  label={categoryNames[id] ?? id}
+                  selected={categoryId === id}
+                  onPress={() => setCategoryId(id)}
+                />
+              ),
+            )}
+          </View>
+          <PrimaryButton
+            label="Save offline"
+            onPress={() => void onAddOffline()}
+            loading={busy}
+          />
+        </Card>
+      ) : null}
+
+      {msg ? <Text style={styles.msg}>{msg}</Text> : null}
+
+      <SectionHeader title="To Review" count={pending.length} />
+      {pending.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon="📥"
+            title="Nothing to review"
+            body="New imports and offline expenses land here until you confirm them."
+            ctaLabel="Add expense"
+            onCta={() => setShowComposer(true)}
+          />
+        </Card>
+      ) : (
+        pending.map((txn) => (
+          <Card key={txn.id} padded={false} style={styles.txnCard}>
+            <Pressable
+              style={styles.txnRow}
+              onPress={() => void openDetail(txn)}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.txnName}>{txn.note || "Expense"}</Text>
+                <Text style={styles.txnMeta}>
+                  {txn.category_id
+                    ? categoryNames[txn.category_id] ?? txn.category_id
+                    : "Uncategorized"}
+                  {txn.synced ? "" : " · pending sync"}
+                </Text>
+              </View>
+              <Text style={styles.txnAmount}>
+                {money(txn.amount, txn.currency)}
+              </Text>
+              <PrimaryButton
+                label="Review"
+                variant="secondary"
+                onPress={() => void onReview(txn.id)}
+                style={styles.reviewBtn}
+              />
+            </Pressable>
+          </Card>
+        ))
+      )}
+
+      <SectionHeader title="All" count={all.length} />
+      {all.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon="💳"
+            title="No transactions yet"
+            body="Add an offline expense or import a bank CSV to get started."
+            ctaLabel="Add expense"
+            onCta={() => setShowComposer(true)}
+          />
+        </Card>
+      ) : (
+        all.map((txn) => (
+          <Card key={`all-${txn.id}`} padded={false} style={styles.txnCard}>
+            <Pressable
+              style={styles.txnRow}
+              onPress={() => void openDetail(txn)}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.txnName}>{txn.note || "—"}</Text>
+                <Text style={styles.txnMeta}>
+                  {txn.review_status}
+                  {txn.category_id
+                    ? ` · ${categoryNames[txn.category_id] ?? txn.category_id}`
+                    : ""}
+                </Text>
+              </View>
+              <Text style={styles.txnAmount}>
+                {money(txn.amount, txn.currency)}
+              </Text>
+            </Pressable>
+          </Card>
+        ))
+      )}
+
+      <Text style={styles.apiHint}>{API_URL.replace("https://", "")}</Text>
 
       <Modal visible={!!detail} animationType="slide" transparent>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>
-              {detail?.currency} {detail?.amount.toFixed(2)} ·{" "}
-              {detail?.note || "txn"}
+              {detail ? money(detail.amount, detail.currency) : ""}
             </Text>
-            <Text style={styles.catLabel}>Tags (no budget impact)</Text>
+            <Text style={styles.txnMeta}>{detail?.note || "Transaction"}</Text>
+
+            <Text style={[styles.label, { marginTop: spacing.md }]}>Tags</Text>
             <View style={styles.chipRow}>
               {allTags.length === 0 ? (
-                <Text style={styles.cardMeta}>Create tags in More → Tags</Text>
+                <Text style={styles.txnMeta}>Create tags in More → Tags</Text>
               ) : (
-                allTags.map((t) => {
-                  const on = txnTagIds.includes(t.id);
-                  return (
-                    <Pressable
-                      key={t.id}
-                      style={[styles.chip, on && styles.chipOn]}
-                      onPress={() => void toggleTag(t.id)}
-                    >
-                      <Text style={[styles.chipText, on && styles.chipTextOn]}>
-                        {t.name}
-                      </Text>
-                    </Pressable>
-                  );
-                })
+                allTags.map((t) => (
+                  <Chip
+                    key={t.id}
+                    label={t.name}
+                    selected={txnTagIds.includes(t.id)}
+                    onPress={() => void toggleTag(t.id)}
+                  />
+                ))
               )}
             </View>
 
-            <Text style={[styles.catLabel, { marginTop: 12 }]}>
-              Minimal split editor (equal 2-way)
+            <Text style={[styles.label, { marginTop: spacing.md }]}>
+              Equal 2-way split
             </Text>
             <View style={styles.chipRow}>
               {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map(
                 (id) => (
-                  <Pressable
+                  <Chip
                     key={`a-${id}`}
-                    style={[styles.chip, splitCatA === id && styles.chipOn]}
+                    label={`A: ${categoryNames[id] ?? id}`}
+                    selected={splitCatA === id}
                     onPress={() => setSplitCatA(id)}
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        splitCatA === id && styles.chipTextOn,
-                      ]}
-                    >
-                      A:{categoryNames[id] ?? id}
-                    </Text>
-                  </Pressable>
+                  />
                 ),
               )}
             </View>
             <View style={styles.chipRow}>
               {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map(
                 (id) => (
-                  <Pressable
+                  <Chip
                     key={`b-${id}`}
-                    style={[styles.chip, splitCatB === id && styles.chipOn]}
+                    label={`B: ${categoryNames[id] ?? id}`}
+                    selected={splitCatB === id}
                     onPress={() => setSplitCatB(id)}
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        splitCatB === id && styles.chipTextOn,
-                      ]}
-                    >
-                      B:{categoryNames[id] ?? id}
-                    </Text>
-                  </Pressable>
+                  />
                 ),
               )}
             </View>
-            <Pressable
-              style={[styles.btn, styles.btnSecondary, { marginTop: 8 }]}
+            <PrimaryButton
+              label="Save equal split"
+              variant="secondary"
               onPress={() => void onEqualSplit()}
-              disabled={busy}
-            >
-              <Text style={styles.btnText}>Save equal split</Text>
-            </Pressable>
+              loading={busy}
+              style={{ marginTop: spacing.sm }}
+            />
             {splitMsg ? <Text style={styles.msg}>{splitMsg}</Text> : null}
 
-            <Pressable
-              style={[styles.btn, { marginTop: 16, backgroundColor: "#64748b" }]}
+            <PrimaryButton
+              label="Close"
+              variant="ghost"
               onPress={() => setDetail(null)}
-            >
-              <Text style={styles.btnText}>Close</Text>
-            </Pressable>
+              style={{ marginTop: spacing.md }}
+            />
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: "#f7f7f8" },
-  container: { padding: 20, paddingBottom: 48 },
-  title: { fontSize: 24, fontWeight: "700", marginBottom: 4 },
-  sub: { color: "#666", marginBottom: 16, fontSize: 12 },
-  form: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 20,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#e2e2e6",
-  },
-  label: { fontWeight: "600", marginBottom: 8 },
-  catLabel: { fontSize: 12, color: "#666", marginBottom: 6 },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 },
-  chip: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: "#fafafa",
-  },
-  chipOn: { backgroundColor: "#1a1a2e", borderColor: "#1a1a2e" },
-  chipText: { fontSize: 12, color: "#334" },
-  chipTextOn: { color: "#fff", fontWeight: "600" },
+  headerActions: { flexDirection: "row", gap: spacing.xs },
+  smallBtn: { minHeight: 36, paddingVertical: 8, minWidth: 64 },
+  composer: { marginBottom: spacing.md },
+  composerTitle: { ...type.headline, marginBottom: spacing.sm },
+  label: { ...type.footnote, fontWeight: "600", marginBottom: 6, marginTop: 4 },
   input: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 8,
-    backgroundColor: "#fafafa",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 12,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.chipBg,
+    color: colors.text,
+    fontSize: 16,
   },
-  row: { flexDirection: "row", gap: 10, marginTop: 4 },
-  btn: {
-    backgroundColor: "#1a1a2e",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 8,
-    minWidth: 110,
-    alignItems: "center",
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
   },
-  btnSecondary: { backgroundColor: "#0d9488" },
-  btnText: { color: "#fff", fontWeight: "600" },
-  msg: { marginTop: 10, color: "#334", fontSize: 13 },
-  section: { fontSize: 18, fontWeight: "600", marginBottom: 10 },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
+  msg: { ...type.footnote, color: colors.text, marginBottom: spacing.sm },
+  txnCard: { marginBottom: spacing.sm },
+  txnRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#e2e2e6",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.md,
   },
-  cardMuted: { flexDirection: "column", alignItems: "flex-start" },
-  cardTitle: { fontSize: 15, fontWeight: "600" },
-  cardMeta: { color: "#666", marginTop: 4, fontSize: 12 },
-  reviewBtn: {
-    backgroundColor: "#0d9488",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
+  txnName: { ...type.headline },
+  txnMeta: { ...type.footnote, marginTop: 2 },
+  txnAmount: { ...type.money },
+  reviewBtn: { minWidth: 84, minHeight: 36, paddingVertical: 8 },
+  apiHint: {
+    ...type.caption,
+    textAlign: "center",
+    marginTop: spacing.xl,
+    color: colors.textTertiary,
   },
-  reviewText: { color: "#fff", fontWeight: "600", fontSize: 13 },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: colors.overlay,
     justifyContent: "flex-end",
   },
   modalCard: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 20,
-    maxHeight: "85%",
+    backgroundColor: colors.card,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    padding: spacing.lg,
+    maxHeight: "88%",
   },
-  modalTitle: { fontSize: 18, fontWeight: "700", marginBottom: 12 },
+  modalTitle: { ...type.title2, marginBottom: 4 },
 });

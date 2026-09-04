@@ -1,10 +1,7 @@
 import { useCallback, useState } from "react";
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
-  RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -20,6 +17,14 @@ import {
 import { syncOutbox } from "../../src/offline/syncOutbox";
 import { createApiTransport } from "../../src/sync/apiTransport";
 import { pullCategoriesFromApi } from "../../src/sync/pullCategories";
+import { colors, radius, spacing, type } from "../../src/theme";
+import {
+  Card,
+  EmptyState,
+  PrimaryButton,
+  Screen,
+  ScreenHeader,
+} from "../../src/ui";
 
 function usd(n: number): string {
   return `$${n.toFixed(0)}`;
@@ -27,7 +32,8 @@ function usd(n: number): string {
 
 function ProgressBar({ spent, budget }: { spent: number; budget: number }) {
   const pct = budget <= 0 ? (spent > 0 ? 1 : 0) : Math.min(spent / budget, 1.2);
-  const color = pct > 1 ? "#ef4444" : pct > 0.8 ? "#f59e0b" : "#10b981";
+  const color =
+    pct > 1 ? colors.danger : pct > 0.8 ? colors.warning : colors.success;
   return (
     <View style={styles.barTrack}>
       <View
@@ -95,7 +101,7 @@ export default function CategoriesScreen() {
       await syncOutbox(createApiTransport());
       setEditRow(null);
       await reload();
-      setMsg(`Saved ${editRow.category.name} budget ${usd(n)}`);
+      setMsg(`Saved ${editRow.category.name} · ${usd(n)}`);
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally {
@@ -103,73 +109,86 @@ export default function CategoriesScreen() {
     }
   }
 
-  return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={loading} onRefresh={() => void reload()} />
-      }
-    >
-      <Text style={styles.title}>Categories</Text>
-      <Text style={styles.sub}>
-        {yearMonth} · budgets in reporting USD · no rebalance yet
-      </Text>
+  const hasRows = groups.some((g) => g.rows.length > 0);
 
-      <View style={styles.summary}>
+  return (
+    <Screen refreshing={loading} onRefresh={() => void reload()}>
+      <ScreenHeader title="Categories" subtitle={`${yearMonth} · USD budgets`} />
+
+      <Card style={styles.summary}>
         <View style={styles.summaryCell}>
           <Text style={styles.summaryLabel}>Budgeted</Text>
           <Text style={styles.summaryValue}>{usd(totals.budgeted)}</Text>
         </View>
+        <View style={styles.summaryDivider} />
         <View style={styles.summaryCell}>
           <Text style={styles.summaryLabel}>Spent</Text>
           <Text style={styles.summaryValue}>{usd(totals.spent)}</Text>
         </View>
+        <View style={styles.summaryDivider} />
         <View style={styles.summaryCell}>
-          <Text style={styles.summaryLabel}>Remaining</Text>
+          <Text style={styles.summaryLabel}>Left</Text>
           <Text
             style={[
               styles.summaryValue,
-              { color: totals.remaining < 0 ? "#ef4444" : "#0d9488" },
+              {
+                color:
+                  totals.remaining < 0 ? colors.danger : colors.success,
+              },
             ]}
           >
             {usd(totals.remaining)}
           </Text>
         </View>
-      </View>
+      </Card>
 
       {msg ? <Text style={styles.msg}>{msg}</Text> : null}
+
+      {!hasRows && !loading ? (
+        <Card>
+          <EmptyState
+            icon="📊"
+            title="No categories yet"
+            body="Pull to sync categories from the API, then tap a row to set a budget."
+          />
+        </Card>
+      ) : null}
 
       {groups.map((g) => (
         <View key={g.id} style={styles.group}>
           <Text style={styles.groupTitle}>{g.name}</Text>
           {g.rows.map((row) => (
-            <Pressable
-              key={row.category.id}
-              style={styles.row}
-              onPress={() => {
-                setEditRow(row);
-                setEditAmount(String(row.budgeted_amount));
-                setMsg(null);
-              }}
-            >
-              <Text style={styles.emoji}>{row.category.emoji}</Text>
-              <View style={{ flex: 1 }}>
-                <View style={styles.rowTop}>
-                  <Text style={styles.catName}>
-                    {row.category.name}
-                    {row.category.exclude_from_budget ? " · excluded" : ""}
-                  </Text>
-                  <Text style={styles.amounts}>
-                    {usd(row.spent)} / {usd(row.effective)}
+            <Card key={row.category.id} padded={false} style={styles.rowCard}>
+              <Pressable
+                style={styles.row}
+                onPress={() => {
+                  setEditRow(row);
+                  setEditAmount(String(row.budgeted_amount));
+                  setMsg(null);
+                }}
+              >
+                <Text style={styles.emoji}>{row.category.emoji}</Text>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.rowTop}>
+                    <Text style={styles.catName}>
+                      {row.category.name}
+                      {row.category.exclude_from_budget ? " · excluded" : ""}
+                    </Text>
+                    <Text style={styles.amounts}>
+                      {usd(row.spent)}
+                      <Text style={styles.amountsMuted}>
+                        {" "}
+                        / {usd(row.effective)}
+                      </Text>
+                    </Text>
+                  </View>
+                  <ProgressBar spent={row.spent} budget={row.effective} />
+                  <Text style={styles.remaining}>
+                    {usd(row.remaining)} left · tap to edit
                   </Text>
                 </View>
-                <ProgressBar spent={row.spent} budget={row.effective} />
-                <Text style={styles.remaining}>
-                  Remaining {usd(row.remaining)} · tap to edit budget
-                </Text>
-              </View>
-            </Pressable>
+              </Pressable>
+            </Card>
           ))}
         </View>
       ))}
@@ -178,10 +197,10 @@ export default function CategoriesScreen() {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>
-              Edit budget · {editRow?.category.emoji} {editRow?.category.name}
+              {editRow?.category.emoji} {editRow?.category.name}
             </Text>
             <Text style={styles.modalHint}>
-              Month {yearMonth} · amount in USD (reporting)
+              Budget for {yearMonth} · reporting USD
             </Text>
             <TextInput
               style={styles.input}
@@ -189,118 +208,94 @@ export default function CategoriesScreen() {
               onChangeText={setEditAmount}
               keyboardType="decimal-pad"
               placeholder="Budgeted amount"
+              placeholderTextColor={colors.textTertiary}
             />
             <View style={styles.modalActions}>
-              <Pressable
-                style={[styles.btn, styles.btnGhost]}
+              <PrimaryButton
+                label="Cancel"
+                variant="ghost"
                 onPress={() => setEditRow(null)}
-              >
-                <Text style={styles.btnGhostText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={styles.btn}
+                style={{ flex: 1 }}
+              />
+              <PrimaryButton
+                label="Save"
                 onPress={() => void onSaveBudget()}
-                disabled={saving}
-              >
-                {saving ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.btnText}>Save</Text>
-                )}
-              </Pressable>
+                loading={saving}
+                style={{ flex: 1 }}
+              />
             </View>
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: "#f7f7f8" },
-  container: { padding: 20, paddingBottom: 48 },
-  title: { fontSize: 24, fontWeight: "700", marginBottom: 4 },
-  sub: { color: "#666", marginBottom: 16, fontSize: 12 },
   summary: {
     flexDirection: "row",
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#e2e2e6",
+    alignItems: "center",
+    marginBottom: spacing.lg,
+    paddingVertical: spacing.md,
   },
-  summaryCell: { flex: 1 },
-  summaryLabel: { fontSize: 11, color: "#888", marginBottom: 4 },
-  summaryValue: { fontSize: 18, fontWeight: "700" },
-  msg: { color: "#334", marginBottom: 10, fontSize: 13 },
-  group: { marginBottom: 18 },
-  groupTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#64748b",
-    marginBottom: 8,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
+  summaryCell: { flex: 1, alignItems: "center" },
+  summaryDivider: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: "stretch",
+    backgroundColor: colors.border,
   },
+  summaryLabel: { ...type.caption, marginBottom: 4 },
+  summaryValue: { ...type.title3 },
+  msg: { ...type.footnote, marginBottom: spacing.sm, color: colors.text },
+  group: { marginBottom: spacing.md },
+  groupTitle: { ...type.caption, marginBottom: spacing.sm, marginLeft: 4 },
+  rowCard: { marginBottom: spacing.sm },
   row: {
     flexDirection: "row",
-    gap: 10,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#e2e2e6",
+    gap: spacing.sm,
+    padding: spacing.md,
   },
-  emoji: { fontSize: 22, width: 28, textAlign: "center" },
+  emoji: { fontSize: 22, width: 28, textAlign: "center", marginTop: 2 },
   rowTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 6,
+    gap: spacing.sm,
   },
-  catName: { fontWeight: "600", fontSize: 15 },
-  amounts: { fontSize: 13, color: "#334", fontWeight: "600" },
-  remaining: { fontSize: 11, color: "#888", marginTop: 4 },
+  catName: { ...type.headline, flex: 1 },
+  amounts: { ...type.callout, fontWeight: "700", color: colors.text },
+  amountsMuted: { color: colors.textSecondary, fontWeight: "500" },
+  remaining: { ...type.footnote, marginTop: 6 },
   barTrack: {
     height: 6,
-    backgroundColor: "#e5e7eb",
-    borderRadius: 999,
+    backgroundColor: colors.chipBg,
+    borderRadius: radius.pill,
     overflow: "hidden",
   },
-  barFill: { height: 6, borderRadius: 999 },
+  barFill: { height: 6, borderRadius: radius.pill },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: colors.overlay,
     justifyContent: "center",
-    padding: 24,
+    padding: spacing.xl,
   },
   modalCard: {
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    padding: 18,
+    backgroundColor: colors.card,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
   },
-  modalTitle: { fontSize: 18, fontWeight: "700", marginBottom: 4 },
-  modalHint: { color: "#666", marginBottom: 12, fontSize: 12 },
+  modalTitle: { ...type.title3, marginBottom: 4 },
+  modalHint: { ...type.footnote, marginBottom: spacing.md },
   input: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 14,
-    backgroundColor: "#fafafa",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 12,
+    marginBottom: spacing.md,
+    backgroundColor: colors.chipBg,
+    color: colors.text,
+    fontSize: 16,
   },
-  modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10 },
-  btn: {
-    backgroundColor: "#1a1a2e",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    minWidth: 90,
-    alignItems: "center",
-  },
-  btnText: { color: "#fff", fontWeight: "600" },
-  btnGhost: { backgroundColor: "#f1f5f9" },
-  btnGhostText: { color: "#334", fontWeight: "600" },
+  modalActions: { flexDirection: "row", gap: spacing.sm },
 });
