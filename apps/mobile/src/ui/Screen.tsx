@@ -37,7 +37,7 @@ export function Screen({
           <RefreshControl
             refreshing={!!refreshing}
             onRefresh={onRefresh}
-            tintColor={colors.primary}
+            tintColor={colors.accentBlue}
           />
         ) : undefined
       }
@@ -48,10 +48,10 @@ export function Screen({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+  root: { flex: 1, backgroundColor: colors.bgPage },
   pad: {
     paddingHorizontal: layout.screenPadding,
-    paddingTop: spacing.md,
+    paddingTop: spacing.lg,
     paddingBottom: spacing.xxxl,
   },
   content: { flexGrow: 1 },

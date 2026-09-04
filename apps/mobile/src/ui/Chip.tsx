@@ -5,17 +5,27 @@ type Props = {
   label: string;
   selected?: boolean;
   onPress?: () => void;
+  /** filled = navy selected (settings currency); soft = blue soft (filters) */
+  tone?: "filled" | "soft";
 };
 
-export function Chip({ label, selected, onPress }: Props) {
+export function Chip({ label, selected, onPress, tone = "soft" }: Props) {
+  const onStyle =
+    tone === "filled"
+      ? selected && styles.onFilled
+      : selected && styles.onSoft;
+  const onText =
+    tone === "filled"
+      ? selected && styles.textOnFilled
+      : selected && styles.textOnSoft;
   return (
     <Pressable
       onPress={onPress}
-      style={[styles.chip, selected && styles.on]}
+      style={[styles.chip, onStyle]}
       accessibilityRole="button"
       accessibilityState={{ selected: !!selected }}
     >
-      <Text style={[styles.text, selected && styles.textOn]}>{label}</Text>
+      <Text style={[styles.text, onText]}>{label}</Text>
     </Pressable>
   );
 }
@@ -23,16 +33,21 @@ export function Chip({ label, selected, onPress }: Props) {
 const styles = StyleSheet.create({
   chip: {
     borderRadius: radius.pill,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
-    backgroundColor: colors.chipBg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
   },
-  on: {
-    backgroundColor: colors.primarySoft,
-    borderColor: colors.primary,
+  onSoft: {
+    backgroundColor: colors.accentBlueSoft,
+    borderColor: "transparent",
   },
-  text: { ...type.footnote, color: colors.text, fontWeight: "600" },
-  textOn: { color: colors.primary },
+  onFilled: {
+    backgroundColor: colors.navy,
+    borderColor: colors.navy,
+  },
+  text: { ...type.callout, fontSize: 13, fontWeight: "600", color: colors.textPrimary },
+  textOnSoft: { color: colors.accentBlue },
+  textOnFilled: { color: colors.textInverse },
 });

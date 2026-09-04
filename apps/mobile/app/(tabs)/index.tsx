@@ -18,19 +18,21 @@ import { syncOutbox } from "../../src/offline/syncOutbox";
 import { createApiTransport } from "../../src/sync/apiTransport";
 import { pullCategoriesFromApi } from "../../src/sync/pullCategories";
 import { SpendingLineChart } from "../../src/components/SpendingLineChart";
-import { API_URL } from "../../src/config";
 import {
   listUpcomingLocal,
   pullRecurringsFromApi,
 } from "../../src/offline/recurrings";
 import { colors, radius, spacing, type } from "../../src/theme";
 import {
+  Amount,
   Card,
-  EmptyState,
+  EmptySparkle,
+  GhostButton,
   PrimaryButton,
   Screen,
   ScreenHeader,
   SectionHeader,
+  TxnRow,
 } from "../../src/ui";
 
 function formatMoney(amount: number, currency: string): string {
@@ -130,38 +132,33 @@ export default function DashboardScreen() {
     <Screen refreshing={loading} onRefresh={() => void reload()}>
       <ScreenHeader
         title="Dashboard"
-        subtitle="Spending, bills, and review inbox"
         right={
-          <PrimaryButton
+          <GhostButton
             label={syncing ? "…" : "Sync"}
             onPress={() => void onSync()}
             loading={syncing}
-            variant="ghost"
             style={styles.syncBtn}
           />
         }
       />
 
-      <Card style={styles.spendCard}>
-        <View style={styles.spendHeader}>
-          <Text style={styles.spendTitle}>Monthly spending</Text>
-          <Pressable onPress={() => router.push("/transactions")}>
-            <Text style={styles.link}>Transactions ›</Text>
-          </Pressable>
+      <Card
+        style={styles.spendCard}
+        title="Monthly spending"
+        actionLabel="Transactions ›"
+        onAction={() => router.push("/transactions")}
+      >
+        <View style={styles.heroCenter}>
+          <Amount
+            value={overLabel}
+            variant={over > 0 ? "over" : "expense"}
+            size="display"
+            style={{ textAlign: "center" }}
+          />
+          <Text style={styles.spendMeta}>
+            ${spend?.total_budget.toFixed(0) ?? "0"} budgeted
+          </Text>
         </View>
-        <Text
-          style={[
-            styles.spendHero,
-            { color: over > 0 ? colors.danger : colors.text },
-          ]}
-        >
-          {overLabel}
-        </Text>
-        <Text style={styles.spendMeta}>
-          ${spend?.spent_mtd.toFixed(0) ?? "0"} spent · $
-          {spend?.total_budget.toFixed(0) ?? "0"} budgeted ·{" "}
-          {spend?.year_month ?? "…"}
-        </Text>
         {spend ? (
           <SpendingLineChart
             cumulative={spend.cumulative_spend}
@@ -170,62 +167,27 @@ export default function DashboardScreen() {
             height={140}
           />
         ) : (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
+          <ActivityIndicator color={colors.accentBlue} style={{ marginTop: 24 }} />
         )}
+        {over > 0 ? (
+          <View style={styles.callout}>
+            <Text style={styles.calloutText}>${over.toFixed(0)} over</Text>
+          </View>
+        ) : null}
       </Card>
 
       {status ? <Text style={styles.status}>{status}</Text> : null}
 
-      <SectionHeader
-        title="Upcoming bills"
-        count={upcoming.length}
-        actionLabel="Recurrings ›"
-        onAction={() => router.push("/recurrings")}
-      />
-      {upcoming.length === 0 && !loading ? (
-        <Card style={{ marginBottom: spacing.md }}>
-          <EmptyState
-            icon="📅"
-            title="No bills due soon"
-            body="Nothing in the next 14 days. Add templates under More → Recurrings."
-            ctaLabel="Add recurring"
-            onCta={() => router.push("/recurrings")}
-          />
-        </Card>
-      ) : (
-        upcoming.map((r) => (
-          <Card key={r.id} padded={false} style={styles.billCard}>
-            <Pressable
-              style={styles.billRow}
-              onPress={() => router.push("/recurrings")}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>{r.name}</Text>
-                <Text style={styles.cardMeta}>
-                  due {r.next_expected_date} · {r.kind} · {r.cadence}
-                </Text>
-              </View>
-              <Text style={styles.amount}>
-                {formatMoney(r.expected_amount, r.currency)}
-              </Text>
-            </Pressable>
-          </Card>
-        ))
-      )}
-
-      <SectionHeader
-        title="To Review"
-        count={items.length}
-        actionLabel="View all ›"
-        onAction={() => router.push("/transactions")}
-      />
-
-      {items.length === 0 && !loading ? (
-        <Card>
-          <EmptyState
-            icon="✨"
-            title="Inbox zero"
-            body="No transactions need review. Add an expense or import a CSV to unlock intelligence."
+      <Card
+        style={styles.reviewCard}
+        title="Transactions to review"
+        actionLabel={items.length ? "View all ›" : undefined}
+        onAction={items.length ? () => router.push("/transactions") : undefined}
+      >
+        {items.length === 0 && !loading ? (
+          <EmptySparkle
+            title="You’re all caught up"
+            body="0 transactions to unlock intelligence. Add an expense or import a CSV."
             ctaLabel="Add transaction"
             onCta={() => router.push("/transactions")}
             secondary={
@@ -234,91 +196,78 @@ export default function DashboardScreen() {
               </Pressable>
             }
           />
-        </Card>
-      ) : null}
-
-      {items.map((txn) => (
-        <Card key={txn.id} style={styles.reviewCard} padded={false}>
-          <View style={styles.reviewRow}>
-            <View style={styles.reviewDot} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>
-                {txn.note || "Expense"}
-                {!txn.synced ? " · unsynced" : ""}
-              </Text>
-              <Text style={styles.cardMeta}>
-                {txn.posted_at.slice(0, 10)} · needs review
-              </Text>
-            </View>
-            <Text style={styles.amount}>
-              {formatMoney(txn.amount, txn.currency)}
-            </Text>
-            <PrimaryButton
-              label="Review"
-              variant="secondary"
-              onPress={() => void onReview(txn.id)}
-              style={styles.reviewBtn}
+        ) : (
+          items.slice(0, 4).map((txn) => (
+            <TxnRow
+              key={txn.id}
+              merchant={txn.note || "Expense"}
+              account={txn.synced ? "Needs review" : "Unsynced · needs review"}
+              amountLabel={formatMoney(txn.amount, txn.currency)}
+              trailing={
+                <PrimaryButton
+                  label="Review"
+                  variant="secondary"
+                  onPress={() => void onReview(txn.id)}
+                  style={styles.reviewBtn}
+                />
+              }
             />
-          </View>
-        </Card>
-      ))}
+          ))
+        )}
+      </Card>
 
-      <Text style={styles.apiHint}>{API_URL.replace("https://", "")}</Text>
+      <SectionHeader
+        title="Next two weeks"
+        count={upcoming.length}
+        actionLabel="Recurrings ›"
+        onAction={() => router.push("/recurrings")}
+      />
+      {upcoming.length === 0 && !loading ? (
+        <Card>
+          <Text style={styles.emptyHint}>
+            No bills due soon. Add templates under More → Recurrings.
+          </Text>
+        </Card>
+      ) : (
+        upcoming.map((r) => (
+          <Card key={r.id} padded={false} style={styles.billCard}>
+            <TxnRow
+              merchant={r.name}
+              account={`due ${r.next_expected_date} · ${r.kind}`}
+              amountLabel={formatMoney(r.expected_amount, r.currency)}
+              onPress={() => router.push("/recurrings")}
+            />
+          </Card>
+        ))
+      )}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   syncBtn: { minWidth: 72, paddingVertical: 8, minHeight: 36 },
-  spendCard: { marginBottom: spacing.lg },
-  spendHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: spacing.xs,
+  spendCard: { marginBottom: spacing.cardGap },
+  heroCenter: { alignItems: "center", marginBottom: spacing.sm },
+  spendMeta: { ...type.footnote, marginTop: 4, color: colors.textSecondary },
+  callout: {
+    alignSelf: "center",
+    marginTop: spacing.sm,
+    backgroundColor: colors.overBudgetCallout,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
   },
-  spendTitle: { ...type.headline },
-  link: { ...type.callout, color: colors.primary, fontWeight: "600" },
+  calloutText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  status: { ...type.footnote, color: colors.textPrimary, marginBottom: spacing.sm },
+  reviewCard: { marginBottom: spacing.sectionGap },
   linkCenter: {
     ...type.callout,
-    color: colors.primary,
+    color: colors.accentBlue,
     fontWeight: "600",
     textAlign: "center",
     marginTop: spacing.xs,
   },
-  spendHero: { ...type.moneyHero, marginBottom: 2 },
-  spendMeta: { ...type.footnote, marginBottom: spacing.sm },
-  status: { ...type.footnote, color: colors.text, marginBottom: spacing.sm },
   billCard: { marginBottom: spacing.sm },
-  billRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.sm + 2,
-    paddingHorizontal: spacing.md,
-  },
-  reviewCard: { marginBottom: spacing.sm },
-  reviewRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.sm + 2,
-    paddingHorizontal: spacing.md,
-  },
-  reviewDot: {
-    width: 10,
-    height: 10,
-    borderRadius: radius.pill,
-    backgroundColor: colors.primary,
-  },
-  cardTitle: { ...type.headline },
-  cardMeta: { ...type.footnote, marginTop: 2 },
-  amount: { ...type.money, marginRight: 4 },
   reviewBtn: { minWidth: 84, minHeight: 36, paddingVertical: 8 },
-  apiHint: {
-    ...type.caption,
-    textAlign: "center",
-    marginTop: spacing.xl,
-    color: colors.textTertiary,
-  },
+  emptyHint: { ...type.subhead, textAlign: "center", paddingVertical: spacing.md },
 });

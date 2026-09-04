@@ -22,6 +22,7 @@ import {
   Card,
   EmptyState,
   PrimaryButton,
+  ProgressBar,
   Screen,
   ScreenHeader,
 } from "../../src/ui";
@@ -30,20 +31,11 @@ function usd(n: number): string {
   return `$${n.toFixed(0)}`;
 }
 
-function ProgressBar({ spent, budget }: { spent: number; budget: number }) {
-  const pct = budget <= 0 ? (spent > 0 ? 1 : 0) : Math.min(spent / budget, 1.2);
+function BudgetBar({ spent, budget }: { spent: number; budget: number }) {
+  const pct = budget <= 0 ? (spent > 0 ? 1 : 0) : spent / budget;
   const color =
-    pct > 1 ? colors.danger : pct > 0.8 ? colors.warning : colors.success;
-  return (
-    <View style={styles.barTrack}>
-      <View
-        style={[
-          styles.barFill,
-          { width: `${Math.min(pct, 1) * 100}%`, backgroundColor: color },
-        ]}
-      />
-    </View>
-  );
+    pct > 1 ? colors.overBudgetRed : pct > 0.8 ? colors.warning : colors.progressFill;
+  return <ProgressBar progress={pct} color={color} />;
 }
 
 export default function CategoriesScreen() {
@@ -133,7 +125,7 @@ export default function CategoriesScreen() {
               styles.summaryValue,
               {
                 color:
-                  totals.remaining < 0 ? colors.danger : colors.success,
+                  totals.remaining < 0 ? colors.overBudgetRed : colors.incomeGreen,
               },
             ]}
           >
@@ -182,7 +174,7 @@ export default function CategoriesScreen() {
                       </Text>
                     </Text>
                   </View>
-                  <ProgressBar spent={row.spent} budget={row.effective} />
+                  <BudgetBar spent={row.spent} budget={row.effective} />
                   <Text style={styles.remaining}>
                     {usd(row.remaining)} left · tap to edit
                   </Text>
@@ -268,7 +260,7 @@ const styles = StyleSheet.create({
   remaining: { ...type.footnote, marginTop: 6 },
   barTrack: {
     height: 6,
-    backgroundColor: colors.chipBg,
+    backgroundColor: colors.bgMuted,
     borderRadius: radius.pill,
     overflow: "hidden",
   },
@@ -280,7 +272,7 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
   },
   modalCard: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.bgCard,
     borderRadius: radius.xl,
     padding: spacing.lg,
   },
@@ -289,11 +281,11 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
-    borderRadius: radius.md,
+    borderRadius: radius.input,
     paddingHorizontal: spacing.sm,
     paddingVertical: 12,
     marginBottom: spacing.md,
-    backgroundColor: colors.chipBg,
+    backgroundColor: colors.bgMuted,
     color: colors.text,
     fontSize: 16,
   },

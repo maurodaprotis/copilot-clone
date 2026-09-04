@@ -49,14 +49,14 @@ export function SpendingLineChart({
         <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
           <polyline
             fill="none"
-            stroke={colors.textTertiary}
+            stroke={colors.chartBudgetLine}
             strokeWidth="2"
             strokeDasharray="4 4"
             points={paceLine}
           />
           <polyline
             fill="none"
-            stroke={over ? colors.danger : colors.primary}
+            stroke={over ? colors.chartSpendLine : colors.accentBlue}
             strokeWidth="2.5"
             points={spendLine}
           />
@@ -66,7 +66,7 @@ export function SpendingLineChart({
         <Text style={styles.legendItem}>
           <Text
             style={{
-              color: over ? colors.danger : colors.primary,
+              color: over ? colors.chartSpendLine : colors.accentBlue,
               fontWeight: "700",
             }}
           >
@@ -75,7 +75,7 @@ export function SpendingLineChart({
           Spend MTD ${spentNow.toFixed(0)}
         </Text>
         <Text style={styles.legendItem}>
-          <Text style={{ color: colors.textTertiary, fontWeight: "700" }}>
+          <Text style={{ color: colors.chartBudgetLine, fontWeight: "700" }}>
             ◌{" "}
           </Text>
           Budget pace ${paceNow.toFixed(0)}
