@@ -34,6 +34,10 @@ export default function RootLayout() {
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="accounts" options={{ title: "Accounts" }} />
+        <Stack.Screen name="settings" options={{ title: "Settings" }} />
+        <Stack.Screen name="import" options={{ title: "Import CSV" }} />
+        <Stack.Screen name="rules" options={{ title: "Name Rules" }} />
+        <Stack.Screen name="tags" options={{ title: "Tags" }} />
       </Stack>
     </>
   );

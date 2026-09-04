@@ -1,6 +1,6 @@
 import * as SQLite from "expo-sqlite";
-import { ACCOUNTS_MIGRATE_SQL, CLIENT_SCHEMA, TRANSACTIONS_MIGRATE_SQL, seedBudgetRows, seedCategoryGroupRows, seedCategoryRows } from "@copilot-clone/db";
-import { currentYearMonth, seedFxRates } from "@copilot-clone/domain";
+import { ACCOUNTS_MIGRATE_SQL, CLIENT_SCHEMA, FX_RATES_MIGRATE_SQL, TRANSACTIONS_MIGRATE_SQL, seedBudgetRows, seedCategoryGroupRows, seedCategoryRows } from "@copilot-clone/db";
+import { currentYearMonth, defaultUserSettings, seedFxRates } from "@copilot-clone/domain";
 import {
   DEMO_ACCOUNT_CURRENCY,
   DEMO_ACCOUNT_ID,
@@ -21,14 +21,28 @@ async function seedDefaults(db: SQLite.SQLiteDatabase): Promise<void> {
 
   for (const row of seedFxRates()) {
     await db.runAsync(
-      `INSERT OR IGNORE INTO fx_rates (from_currency, to_currency, on_date, rate)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO fx_rates (from_currency, to_currency, on_date, rate, rate_book, source)
+       VALUES (?, ?, ?, ?, ?, ?)`,
       row.from,
       row.to,
       row.on_date,
       row.rate,
+      row.rate_book,
+      row.source ?? "manual",
     );
   }
+
+  const settings = defaultUserSettings();
+  await db.runAsync(
+    `INSERT OR IGNORE INTO user_settings (
+       id, reporting_currency, locale, timezone, default_fx_series
+     ) VALUES (?, ?, ?, ?, ?)`,
+    settings.id,
+    settings.reporting_currency,
+    settings.locale,
+    settings.timezone,
+    settings.default_fx_series,
+  );
 
   for (const g of seedCategoryGroupRows()) {
     await db.runAsync(
@@ -167,7 +181,7 @@ export async function getDb(): Promise<LocalDb> {
       } catch {
         // column already exists
       }
-      for (const sql of [...ACCOUNTS_MIGRATE_SQL, ...TRANSACTIONS_MIGRATE_SQL]) {
+      for (const sql of [...ACCOUNTS_MIGRATE_SQL, ...TRANSACTIONS_MIGRATE_SQL, ...FX_RATES_MIGRATE_SQL]) {
         try {
           await db.execAsync(sql);
         } catch {

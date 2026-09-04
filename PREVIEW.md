@@ -1,35 +1,31 @@
-# Preview — Rules / Tags / Splits (+ Cash Flow / Accounts / Budgets)
+# Preview — Settings / FX / Bank CSV Import
 
 ## URLs
 
 - Worker API: https://copilot-clone-api.maurodaprotis.workers.dev
 - Health: GET /health
-- Sync: POST /sync — upsert | review | budget_upsert | account_upsert | **rule_upsert** | **tag_upsert** | **tag_assign** | **tag_unassign** | **split_set**
-- Categories: GET /categories?month=YYYY-MM
-- Spending: GET /dashboard/spending?month=YYYY-MM
-- Cash Flow: GET /cash-flow?month=YYYY-MM
-- Accounts: GET /accounts
-- **Rules:** GET /rules
-- **Tags:** GET /tags
-- **Splits:** GET /splits?transaction_id=
+- **Settings:** GET|POST /settings — reporting_currency (USD default), default_fx_series (official|parallel|custom), timezone/locale stubs
+- **FX:** GET /fx?rate_book= · POST /fx `{base,quote,as_of,rate,rate_book}` · POST /fx/delete
+- **Imports:** POST /imports `{csv_text,account_id}` → mapping → POST /imports/:id/mapping → ready_review → POST /imports/:id/commit → needs_review · POST /imports/:id/undo soft-delete stub
+- Sync / Categories / Cash Flow / Accounts / Rules / Tags / Splits unchanged
 
 ## Naming
 
 - review_status: needs_review | reviewed | excluded (NOT pending)
-- pending is TxnStatus, separate from ReviewStatus
-- Name Rules match txn `name` (falls back to `note`); do **not** auto-mark reviewed
+- AccountType: credit_card | depository | investment | loan | other | real_estate
+- FxRate.rate_book: official | parallel | custom
+- ImportJob status: uploaded | parsing | mapping | ready_review | committed | failed
 
 ## Click-test (Paul)
 
-1. **More → Name Rules:** create contains/exact pattern → category; Sync. New expenses whose name/note matches get that category on create/sync (still `needs_review`). Historic apply is stubbed.
-2. **More → Tags:** add a tag. **Transactions** → tap a row → toggle tags on/off (no budget impact).
-3. **Transactions** → tap row → equal 2-way split → Save. Budgets count legs only (parent not double-counted). Unbalanced splits rejected.
-4. Categories / Dashboard / Cash Flow / Accounts still work; needs_review preserved.
+### Settings + FX
+1. **More → Settings:** reporting currency USD (default); switch default FX series official/parallel/custom; edit timezone/locale stubs.
+2. Add manual FX: base USD / quote ARS / as_of today / rate / rate_book=parallel → Save FX rate.
 
-No rebalance UI. No Plaid/Postgres.
+### Bank CSV import
+1. **More → Import CSV:** paste CSV (sample pre-filled) or debit+credit columns.
+2. Pick account → **1. Upload / parse** → confirm mapping → **2. Apply mapping**.
+3. **3. Commit → needs_review** → open **Transactions** / To Review; re-import skips duplicates via fingerprint.
+4. Optional **Undo** soft-deletes created txns.
 
-## Accounts notes
-
-- AccountType: credit_card | depository | investment | loan | other | real_estate
-- Default manual cash seed: `other` (`acc-cash-ars`)
-- `current_balance` is persisted live balance (updated on review/upsert); sync carries it via account_upsert / GET /accounts
+No Plaid/Postgres. needs_review preserved.

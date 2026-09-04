@@ -22,3 +22,23 @@ export function transactionFingerprint(input: {
   ];
   return parts.join("|");
 }
+
+/**
+ * Spec import fingerprint: account + date + amount + normalized_name + currency.
+ */
+export function importFingerprint(input: {
+  account_id: string;
+  date: string;
+  amount: number;
+  description: string;
+  currency: string;
+}): string {
+  const name = input.description.trim().toLowerCase().replace(/\s+/g, " ");
+  return [
+    input.account_id,
+    input.date.slice(0, 10),
+    Math.abs(input.amount).toFixed(4),
+    name,
+    input.currency.toUpperCase(),
+  ].join("|");
+}

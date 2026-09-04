@@ -1,9 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
-import { ACCOUNTS_MIGRATE_SQL, SERVER_SCHEMA, TRANSACTIONS_MIGRATE_SQL, seedBudgetRows, seedCategoryGroupRows, seedCategoryRows } from "@copilot-clone/db";
+import { ACCOUNTS_MIGRATE_SQL, FX_RATES_MIGRATE_SQL, SERVER_SCHEMA, TRANSACTIONS_MIGRATE_SQL, seedBudgetRows, seedCategoryGroupRows, seedCategoryRows } from "@copilot-clone/db";
 import {
+  applyCsvMapping,
   applyNameRuleToTransaction,
   assertBalancedSplit,
   isClientError,
+  importFingerprint,
   balanceDeltaForTxn,
   buildAccountBalanceRows,
   buildCategoryBudgetRows,
@@ -11,23 +13,36 @@ import {
   computeCashFlowWithPrior,
   cumulativeSpendByDay,
   currentYearMonth,
+  defaultUserSettings,
   deriveAmounts,
   fx_convert,
+  mergeUserSettings,
   normalizeAccountType,
+  normalizeFxSeries,
   normalizeReviewStatus,
+  parseCsvText,
   recomputeBalanceFromOpeningAndTxns,
   seedFxRates,
+  signedAmountToTxn,
+  suggestCsvMapping,
   totalEffectiveBudget,
   type Account,
   type BudgetMonth,
   type Category,
   type CategoryGroup,
+  type CsvColumnMapping,
+  type FxRate,
+  type FxRateInput,
+  type FxSeries,
+  type ImportJob,
+  type ImportRow,
   type NameRule,
   type RateBook,
   type ReviewStatus,
   type SplitLeg,
   type Tag,
   type Transaction,
+  type UserSettings,
 } from "@copilot-clone/domain";
 
 export interface Env {
@@ -94,7 +109,11 @@ export class UserDO extends DurableObject<Env> {
   private async ensureSchema(): Promise<void> {
     if (this.ready) return;
     this.ctx.storage.sql.exec(SERVER_SCHEMA);
-    for (const sql of [...ACCOUNTS_MIGRATE_SQL, ...TRANSACTIONS_MIGRATE_SQL]) {
+    for (const sql of [
+      ...ACCOUNTS_MIGRATE_SQL,
+      ...TRANSACTIONS_MIGRATE_SQL,
+      ...FX_RATES_MIGRATE_SQL,
+    ]) {
       try {
         this.ctx.storage.sql.exec(sql);
       } catch {
@@ -107,6 +126,7 @@ export class UserDO extends DurableObject<Env> {
     );
     this.seedIfEmpty();
     this.seedFxIfNeeded();
+    this.seedSettingsIfNeeded();
     this.migrateAccountTypesAndBalances();
     this.ready = true;
   }
@@ -176,12 +196,14 @@ export class UserDO extends DurableObject<Env> {
 
     for (const row of seedFxRates()) {
       this.ctx.storage.sql.exec(
-        `INSERT OR REPLACE INTO fx_rates (from_currency, to_currency, on_date, rate)
-         VALUES (?, ?, ?, ?)`,
+        `INSERT OR REPLACE INTO fx_rates (from_currency, to_currency, on_date, rate, rate_book, source)
+         VALUES (?, ?, ?, ?, ?, ?)`,
         row.from,
         row.to,
         row.on_date,
         row.rate,
+        row.rate_book,
+        row.source ?? "manual",
       );
     }
   }
@@ -263,21 +285,289 @@ export class UserDO extends DurableObject<Env> {
     };
   }
 
-  private loadRateBook(): RateBook {
-    this.seedFxIfNeeded();
-    const book: RateBook = {};
-    const rows = this.ctx.storage.sql.exec(
-      "SELECT from_currency, to_currency, on_date, rate FROM fx_rates",
+  private seedSettingsIfNeeded(): void {
+    const existing = [
+      ...this.ctx.storage.sql.exec(
+        `SELECT 1 AS ok FROM user_settings WHERE id = 'default' LIMIT 1`,
+      ),
+    ];
+    if (existing.length > 0) return;
+    const s = defaultUserSettings();
+    this.ctx.storage.sql.exec(
+      `INSERT INTO user_settings (
+         id, reporting_currency, locale, timezone, default_fx_series
+       ) VALUES (?, ?, ?, ?, ?)`,
+      s.id,
+      s.reporting_currency,
+      s.locale,
+      s.timezone,
+      s.default_fx_series,
     );
+  }
+
+  private getSettings(): UserSettings {
+    this.seedSettingsIfNeeded();
+    const rows = [
+      ...this.ctx.storage.sql.exec(
+        `SELECT * FROM user_settings WHERE id = 'default' LIMIT 1`,
+      ),
+    ];
+    if (rows.length === 0) return defaultUserSettings();
+    const row = rows[0]!;
+    return {
+      id: String(row.id),
+      reporting_currency: String(row.reporting_currency ?? "USD"),
+      locale: String(row.locale ?? "en-US"),
+      timezone: String(row.timezone ?? "America/Argentina/Salta"),
+      default_fx_series: normalizeFxSeries(
+        row.default_fx_series == null ? null : String(row.default_fx_series),
+      ),
+    };
+  }
+
+  private patchSettings(patch: Partial<UserSettings>): UserSettings {
+    const next = mergeUserSettings(this.getSettings(), patch);
+    this.ctx.storage.sql.exec(
+      `INSERT INTO user_settings (
+         id, reporting_currency, locale, timezone, default_fx_series
+       ) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         reporting_currency = excluded.reporting_currency,
+         locale = excluded.locale,
+         timezone = excluded.timezone,
+         default_fx_series = excluded.default_fx_series`,
+      next.id,
+      next.reporting_currency,
+      next.locale,
+      next.timezone,
+      next.default_fx_series,
+    );
+    return next;
+  }
+
+  private listFxRates(series?: FxSeries): FxRate[] {
+    this.seedFxIfNeeded();
+    const rows = series
+      ? [...this.ctx.storage.sql.exec(`SELECT * FROM fx_rates WHERE rate_book = ? ORDER BY on_date DESC`, series)]
+      : [...this.ctx.storage.sql.exec(`SELECT * FROM fx_rates ORDER BY on_date DESC`)];
+    return rows.map((row) => ({
+      from: String(row.from_currency),
+      to: String(row.to_currency),
+      on_date: String(row.on_date),
+      rate: Number(row.rate),
+      rate_book: normalizeFxSeries(row.rate_book == null ? "parallel" : String(row.rate_book)),
+      source: (row.source == null ? "manual" : String(row.source)) as FxRate["source"],
+    }));
+  }
+
+  private upsertFxRate(input: FxRateInput): FxRate {
+    const base = input.base.toUpperCase();
+    const quote = input.quote.toUpperCase();
+    const asOf = input.as_of.slice(0, 10);
+    const book = normalizeFxSeries(input.rate_book);
+    const source = input.source ?? "manual";
+    this.ctx.storage.sql.exec(
+      `INSERT OR REPLACE INTO fx_rates (from_currency, to_currency, on_date, rate, rate_book, source)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      base, quote, asOf, Number(input.rate), book, source,
+    );
+    return { from: base, to: quote, on_date: asOf, rate: Number(input.rate), rate_book: book, source };
+  }
+
+  private deleteFxRate(input: { base: string; quote: string; as_of: string; rate_book: FxSeries }): void {
+    this.ctx.storage.sql.exec(
+      `DELETE FROM fx_rates WHERE from_currency = ? AND to_currency = ? AND on_date = ? AND rate_book = ?`,
+      input.base.toUpperCase(), input.quote.toUpperCase(), input.as_of.slice(0, 10), normalizeFxSeries(input.rate_book),
+    );
+  }
+
+  private loadRateBook(series?: FxSeries): RateBook {
+    this.seedFxIfNeeded();
+    const settings = this.getSettings();
+    const use = series ?? settings.default_fx_series;
+    const book: RateBook = {};
+    let rows = [...this.ctx.storage.sql.exec(
+      `SELECT from_currency, to_currency, on_date, rate FROM fx_rates WHERE rate_book = ?`, use,
+    )];
+    if (rows.length === 0) {
+      rows = [...this.ctx.storage.sql.exec(`SELECT from_currency, to_currency, on_date, rate FROM fx_rates`)];
+    }
     for (const row of rows) {
-      const from = String(row.from_currency);
-      const to = String(row.to_currency);
-      const on_date = String(row.on_date);
-      const rate = Number(row.rate);
-      book[`${from}:${to}:${on_date}`] = rate;
+      book[`${String(row.from_currency)}:${String(row.to_currency)}:${String(row.on_date)}`] = Number(row.rate);
     }
     return book;
   }
+
+  private mapImportJob(row: Record<string, unknown>): ImportJob {
+    return {
+      id: String(row.id), type: "bank_csv",
+      status: String(row.status) as ImportJob["status"],
+      account_id: row.account_id == null ? null : String(row.account_id),
+      currency: row.currency == null ? null : String(row.currency),
+      file_name: row.file_name == null ? null : String(row.file_name),
+      mime: row.mime == null ? null : String(row.mime),
+      detected_format: row.detected_format == null ? null : String(row.detected_format),
+      mapping_json: row.mapping_json == null ? null : String(row.mapping_json),
+      error_log: row.error_log == null ? null : String(row.error_log),
+      created_at: String(row.created_at),
+      committed_at: row.committed_at == null ? null : String(row.committed_at),
+      undone_at: row.undone_at == null ? null : String(row.undone_at),
+      row_count: Number(row.row_count ?? 0),
+      created_count: Number(row.created_count ?? 0),
+      duplicate_count: Number(row.duplicate_count ?? 0),
+    };
+  }
+
+  private getImportJob(id: string): ImportJob | null {
+    const rows = [...this.ctx.storage.sql.exec(`SELECT * FROM import_jobs WHERE id = ? LIMIT 1`, id)];
+    if (rows.length === 0) return null;
+    return this.mapImportJob(rows[0]! as Record<string, unknown>);
+  }
+
+  private listImportJobs(): ImportJob[] {
+    return [...this.ctx.storage.sql.exec(`SELECT * FROM import_jobs ORDER BY created_at DESC LIMIT 50`)].map(
+      (row) => this.mapImportJob(row as Record<string, unknown>),
+    );
+  }
+
+  private listImportRows(jobId: string): ImportRow[] {
+    return [...this.ctx.storage.sql.exec(`SELECT * FROM import_rows WHERE job_id = ? ORDER BY row_index ASC`, jobId)].map((row) => ({
+      id: String(row.id), job_id: String(row.job_id), raw_payload: String(row.raw_payload),
+      row_date: row.row_date == null ? null : String(row.row_date),
+      name: row.name == null ? null : String(row.name),
+      amount: row.amount == null ? null : Number(row.amount),
+      currency: row.currency == null ? null : String(row.currency),
+      fingerprint: row.fingerprint == null ? null : String(row.fingerprint),
+      action: String(row.action) as ImportRow["action"],
+      result_entity_id: row.result_entity_id == null ? null : String(row.result_entity_id),
+      row_index: Number(row.row_index ?? 0),
+    }));
+  }
+
+  private createImportJob(input: {
+    csv_text: string; account_id?: string | null; currency?: string | null; file_name?: string | null;
+  }): { job: ImportJob; headers: string[]; suggested_mapping: CsvColumnMapping } {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    try {
+      const table = parseCsvText(input.csv_text);
+      if (table.headers.length === 0) {
+        this.ctx.storage.sql.exec(
+          `INSERT INTO import_jobs (id, type, status, account_id, currency, file_name, mime, detected_format, mapping_json, csv_text, error_log, created_at, row_count, created_count, duplicate_count)
+           VALUES (?, 'bank_csv', 'failed', ?, ?, ?, 'text/csv', NULL, NULL, ?, ?, ?, 0, 0, 0)`,
+          id, input.account_id ?? null, input.currency ?? null, input.file_name ?? null, input.csv_text, "Empty CSV", now,
+        );
+        return { job: this.getImportJob(id)!, headers: [], suggested_mapping: suggestCsvMapping([]) };
+      }
+      const suggested = suggestCsvMapping(table.headers);
+      this.ctx.storage.sql.exec(
+        `INSERT INTO import_jobs (id, type, status, account_id, currency, file_name, mime, detected_format, mapping_json, csv_text, error_log, created_at, row_count, created_count, duplicate_count)
+         VALUES (?, 'bank_csv', 'mapping', ?, ?, ?, 'text/csv', 'bank_csv', NULL, ?, NULL, ?, ?, 0, 0)`,
+        id, input.account_id ?? null, input.currency ?? null, input.file_name ?? "paste.csv", input.csv_text, now, table.rows.length,
+      );
+      return { job: this.getImportJob(id)!, headers: table.headers, suggested_mapping: suggested };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.ctx.storage.sql.exec(
+        `INSERT INTO import_jobs (id, type, status, account_id, currency, file_name, mime, detected_format, mapping_json, csv_text, error_log, created_at, row_count, created_count, duplicate_count)
+         VALUES (?, 'bank_csv', 'failed', ?, ?, ?, 'text/csv', NULL, NULL, ?, ?, ?, 0, 0, 0)`,
+        id, input.account_id ?? null, input.currency ?? null, input.file_name ?? null, input.csv_text, msg, now,
+      );
+      return { job: this.getImportJob(id)!, headers: [], suggested_mapping: suggestCsvMapping([]) };
+    }
+  }
+
+  private applyImportMapping(
+    jobId: string, mapping: CsvColumnMapping, accountId?: string | null, currency?: string | null,
+  ): { job: ImportJob; rows: ImportRow[]; preview: ImportRow[] } {
+    const jobRows = [...this.ctx.storage.sql.exec(`SELECT * FROM import_jobs WHERE id = ? LIMIT 1`, jobId)];
+    if (jobRows.length === 0) throw new Error("import job not found");
+    const csvText = String(jobRows[0]!.csv_text ?? "");
+    const table = parseCsvText(csvText);
+    const mapped = applyCsvMapping(table, mapping);
+    const acct = accountId ?? (jobRows[0]!.account_id == null ? null : String(jobRows[0]!.account_id));
+    const ccy = (currency ?? (jobRows[0]!.currency == null ? null : String(jobRows[0]!.currency)) ?? "USD").toUpperCase();
+    this.ctx.storage.sql.exec(`DELETE FROM import_rows WHERE job_id = ?`, jobId);
+    for (const m of mapped) {
+      const rowCcy = (m.currency ?? ccy).toUpperCase();
+      const abs = Math.abs(m.amount);
+      const fp = acct ? importFingerprint({ account_id: acct, date: m.date, amount: abs, description: m.description, currency: rowCcy }) : null;
+      let action: ImportRow["action"] = "create_txn";
+      if (fp && this.findByFingerprint(fp)) action = "duplicate";
+      this.ctx.storage.sql.exec(
+        `INSERT INTO import_rows (id, job_id, raw_payload, row_date, name, amount, currency, fingerprint, action, result_entity_id, row_index)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+        crypto.randomUUID(), jobId, JSON.stringify(m.raw), m.date, m.description, m.amount, rowCcy, fp, action, m.row_index,
+      );
+    }
+    this.ctx.storage.sql.exec(
+      `UPDATE import_jobs SET status = 'ready_review', mapping_json = ?, account_id = ?, currency = ?, row_count = ?, error_log = NULL WHERE id = ?`,
+      JSON.stringify(mapping), acct, ccy, mapped.length, jobId,
+    );
+    const rows = this.listImportRows(jobId);
+    return { job: this.getImportJob(jobId)!, rows, preview: rows.slice(0, 20) };
+  }
+
+  private commitImport(jobId: string): { job: ImportJob; created: string[]; duplicates: string[] } {
+    const job = this.getImportJob(jobId);
+    if (!job) throw new Error("import job not found");
+    if (job.status !== "ready_review" && job.status !== "committed") throw new Error(`cannot commit job in status ${job.status}`);
+    if (!job.account_id) throw new Error("import job missing account_id");
+    const account = this.listAccounts().find((a) => a.id === job.account_id);
+    if (!account) throw new Error("account not found");
+    const settings = this.getSettings();
+    const rateBook = this.loadRateBook();
+    const rows = this.listImportRows(jobId);
+    const created: string[] = [];
+    const duplicates: string[] = [];
+    for (const row of rows) {
+      if (row.action === "skip" || row.amount == null || !row.row_date) continue;
+      const rowCcy = (row.currency ?? job.currency ?? account.currency).toUpperCase();
+      const { amount, type, is_refund } = signedAmountToTxn(row.amount);
+      const fp = row.fingerprint ?? importFingerprint({
+        account_id: job.account_id, date: row.row_date, amount, description: row.name ?? "", currency: rowCcy,
+      });
+      const existing = this.findByFingerprint(fp);
+      if (existing || row.action === "duplicate") {
+        duplicates.push(existing ?? fp);
+        this.ctx.storage.sql.exec(`UPDATE import_rows SET action = 'duplicate', result_entity_id = ? WHERE id = ?`, existing, row.id);
+        continue;
+      }
+      const txnId = crypto.randomUUID();
+      this.applyUpsert({
+        op: "upsert", id: txnId, account_id: job.account_id, amount, currency: rowCcy, type, is_refund,
+        review_status: "needs_review", posted_at: `${row.row_date}T12:00:00.000Z`, note: row.name, txn_name: row.name,
+        fingerprint: fp, account_currency: account.currency, reporting_currency: settings.reporting_currency,
+      }, rateBook);
+      created.push(txnId);
+      this.ctx.storage.sql.exec(`UPDATE import_rows SET action = 'create_txn', result_entity_id = ? WHERE id = ?`, txnId, row.id);
+    }
+    const now = new Date().toISOString();
+    this.ctx.storage.sql.exec(
+      `UPDATE import_jobs SET status = 'committed', committed_at = ?, created_count = ?, duplicate_count = ? WHERE id = ?`,
+      now, created.length, duplicates.length, jobId,
+    );
+    return { job: this.getImportJob(jobId)!, created, duplicates };
+  }
+
+  private undoImport(jobId: string): ImportJob {
+    const job = this.getImportJob(jobId);
+    if (!job) throw new Error("import job not found");
+    if (job.status !== "committed") throw new Error("only committed jobs can be undone");
+    const now = new Date().toISOString();
+    for (const row of this.listImportRows(jobId)) {
+      if (!row.result_entity_id || row.action !== "create_txn") continue;
+      const before = this.loadTxnDomainById(row.result_entity_id);
+      this.ctx.storage.sql.exec(
+        `UPDATE transactions SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`,
+        now, now, row.result_entity_id,
+      );
+      if (before) this.applyAccountBalanceDelta(before.account_id, -balanceDeltaForTxn(before));
+    }
+    this.ctx.storage.sql.exec(`UPDATE import_jobs SET undone_at = ? WHERE id = ?`, now, jobId);
+    return this.getImportJob(jobId)!;
+  }
+
 
   private findByFingerprint(fingerprint: string): string | null {
     const rows = [
@@ -338,7 +628,9 @@ export class UserDO extends DurableObject<Env> {
   }
 
   private listTransactionsDomain(): Transaction[] {
-    return [...this.ctx.storage.sql.exec("SELECT * FROM transactions")].map(
+    return [...this.ctx.storage.sql.exec(
+      "SELECT * FROM transactions WHERE deleted_at IS NULL",
+    )].map(
       (row) => ({
         id: String(row.id),
         account_id: String(row.account_id),
@@ -711,22 +1003,24 @@ export class UserDO extends DurableObject<Env> {
 
   private cashFlowPayload(yearMonth: string) {
     const transactions = this.listTransactionsDomain();
+    const settings = this.getSettings();
     return computeCashFlowWithPrior({
       transactions,
       year_month: yearMonth,
-      reporting_currency: "USD",
+      reporting_currency: settings.reporting_currency,
     });
   }
 
   private accountsPayload() {
     const accounts = this.listAccounts();
     const transactions = this.listTransactionsDomain();
+    const settings = this.getSettings();
     const rateBook = this.loadRateBook();
     const onDate = new Date().toISOString().slice(0, 10);
     const built = buildAccountBalanceRows({
       accounts,
       transactions,
-      reporting_currency: "USD",
+      reporting_currency: settings.reporting_currency,
       on_date: onDate,
       rate_book: rateBook,
     });
@@ -752,7 +1046,7 @@ export class UserDO extends DurableObject<Env> {
     });
     return {
       year_month: yearMonth,
-      reporting_currency: "USD",
+      reporting_currency: this.getSettings().reporting_currency,
       groups,
       categories,
       budgets,
@@ -792,7 +1086,7 @@ export class UserDO extends DurableObject<Env> {
     const pace = budgetPaceByDay(totalBudget, yearMonth);
     return {
       year_month: yearMonth,
-      reporting_currency: "USD",
+      reporting_currency: this.getSettings().reporting_currency,
       total_budget: totalBudget,
       cumulative_spend: cumulative,
       budget_pace: pace,
@@ -803,7 +1097,7 @@ export class UserDO extends DurableObject<Env> {
   private listTransactionsNormalized(): Record<string, unknown>[] {
     const rows = [
       ...this.ctx.storage.sql.exec(
-        "SELECT * FROM transactions ORDER BY posted_at DESC",
+        "SELECT * FROM transactions WHERE deleted_at IS NULL ORDER BY posted_at DESC",
       ),
     ];
     return rows.map((row) => {
@@ -823,23 +1117,99 @@ export class UserDO extends DurableObject<Env> {
       return Response.json({ ok: true, do: "UserDO" });
     }
 
+    if (request.method === "GET" && url.pathname === "/settings") {
+      return Response.json({ settings: this.getSettings() });
+    }
+
+    if (request.method === "POST" && url.pathname === "/settings") {
+      const body = (await request.json()) as Partial<UserSettings>;
+      return Response.json({ ok: true, settings: this.patchSettings(body) });
+    }
+
+    if (request.method === "GET" && url.pathname === "/fx") {
+      const series = url.searchParams.get("rate_book");
+      return Response.json({
+        rates: this.listFxRates(series ? normalizeFxSeries(series) : undefined),
+        default_fx_series: this.getSettings().default_fx_series,
+      });
+    }
+
     if (request.method === "POST" && url.pathname === "/fx") {
-      const body = (await request.json()) as {
-        from: string;
-        to: string;
-        on_date: string;
-        rate: number;
+      const body = (await request.json()) as Partial<FxRateInput> & {
+        from?: string; to?: string; on_date?: string;
       };
-      this.ctx.storage.sql.exec(
-        `INSERT OR REPLACE INTO fx_rates (from_currency, to_currency, on_date, rate)
-         VALUES (?, ?, ?, ?)`,
-        body.from.toUpperCase(),
-        body.to.toUpperCase(),
-        body.on_date,
-        body.rate,
-      );
+      const rate = this.upsertFxRate({
+        base: body.base ?? body.from ?? "USD",
+        quote: body.quote ?? body.to ?? "ARS",
+        as_of: body.as_of ?? body.on_date ?? new Date().toISOString().slice(0, 10),
+        rate: Number(body.rate ?? 0),
+        rate_book: normalizeFxSeries(body.rate_book),
+        source: body.source ?? "manual",
+      });
+      return Response.json({ ok: true, rate });
+    }
+
+    if (request.method === "POST" && url.pathname === "/fx/delete") {
+      const body = (await request.json()) as {
+        base: string; quote: string; as_of: string; rate_book: FxSeries;
+      };
+      this.deleteFxRate(body);
       return Response.json({ ok: true });
     }
+
+    if (request.method === "GET" && url.pathname === "/imports") {
+      return Response.json({ imports: this.listImportJobs() });
+    }
+
+    if (request.method === "POST" && url.pathname === "/imports") {
+      const body = (await request.json()) as {
+        csv_text: string; account_id?: string; currency?: string; file_name?: string;
+      };
+      if (!body.csv_text) {
+        return Response.json({ ok: false, error: "csv_text required" }, { status: 400 });
+      }
+      return Response.json({ ok: true, ...this.createImportJob(body) });
+    }
+
+    if (request.method === "GET" && url.pathname.startsWith("/imports/")) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      if (parts.length === 2) {
+        const job = this.getImportJob(parts[1]!);
+        if (!job) return Response.json({ error: "not found" }, { status: 404 });
+        return Response.json({ job, rows: this.listImportRows(job.id) });
+      }
+    }
+
+    if (request.method === "POST" && url.pathname.startsWith("/imports/")) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      if (parts.length === 3) {
+        const jobId = parts[1]!;
+        const action = parts[2]!;
+        try {
+          if (action === "mapping") {
+            const body = (await request.json()) as {
+              mapping: CsvColumnMapping; account_id?: string; currency?: string;
+            };
+            return Response.json({
+              ok: true,
+              ...this.applyImportMapping(jobId, body.mapping, body.account_id, body.currency),
+            });
+          }
+          if (action === "commit") {
+            return Response.json({ ok: true, ...this.commitImport(jobId) });
+          }
+          if (action === "undo") {
+            return Response.json({ ok: true, job: this.undoImport(jobId) });
+          }
+        } catch (e) {
+          return Response.json(
+            { ok: false, error: e instanceof Error ? e.message : String(e) },
+            { status: 400 },
+          );
+        }
+      }
+    }
+
 
     if (request.method === "POST" && url.pathname === "/sync") {
       const body = (await request.json()) as { items: SyncPushItem[] };
