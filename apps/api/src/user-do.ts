@@ -1,6 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
-import { ACCOUNTS_MIGRATE_SQL, SERVER_SCHEMA, seedBudgetRows, seedCategoryGroupRows, seedCategoryRows } from "@copilot-clone/db";
+import { ACCOUNTS_MIGRATE_SQL, SERVER_SCHEMA, TRANSACTIONS_MIGRATE_SQL, seedBudgetRows, seedCategoryGroupRows, seedCategoryRows } from "@copilot-clone/db";
 import {
+  applyNameRuleToTransaction,
+  assertBalancedSplit,
   balanceDeltaForTxn,
   buildAccountBalanceRows,
   buildCategoryBudgetRows,
@@ -19,8 +21,11 @@ import {
   type BudgetMonth,
   type Category,
   type CategoryGroup,
+  type NameRule,
   type RateBook,
   type ReviewStatus,
+  type SplitLeg,
+  type Tag,
   type Transaction,
 } from "@copilot-clone/domain";
 
@@ -29,7 +34,16 @@ export interface Env {
 }
 
 type SyncPushItem = {
-  op?: "upsert" | "review" | "budget_upsert" | "account_upsert";
+  op?:
+    | "upsert"
+    | "review"
+    | "budget_upsert"
+    | "account_upsert"
+    | "rule_upsert"
+    | "tag_upsert"
+    | "tag_assign"
+    | "tag_unassign"
+    | "split_set";
   id?: string;
   account_id?: string;
   category_id?: string | null;
@@ -41,21 +55,36 @@ type SyncPushItem = {
   review_status?: ReviewStatus | "pending";
   posted_at?: string;
   note?: string | null;
+  /** Merchant/payee for Name Rules (falls back to note). */
+  txn_name?: string | null;
   transfer_pair_id?: string | null;
   fingerprint?: string | null;
   account_currency?: string;
   reporting_currency?: string;
   updated_at?: string;
+  is_split_parent?: boolean;
   // budget_upsert
   year_month?: string;
   budgeted_amount?: number;
   rollover_mode?: string;
   rollover_from_prior?: number;
-  // account_upsert
+  // account_upsert / tag / rule
   name?: string;
   is_archived?: boolean;
   include_in_net_worth?: boolean;
   current_balance?: number;
+  match_type?: "exact" | "contains";
+  pattern?: string;
+  apply_historically?: boolean;
+  color?: string;
+  tag_id?: string;
+  transaction_id?: string;
+  legs?: Array<{
+    id?: string;
+    category_id: string;
+    amount: number;
+    year_month_override?: string | null;
+  }>;
 };
 
 export class UserDO extends DurableObject<Env> {
@@ -64,7 +93,7 @@ export class UserDO extends DurableObject<Env> {
   private async ensureSchema(): Promise<void> {
     if (this.ready) return;
     this.ctx.storage.sql.exec(SERVER_SCHEMA);
-    for (const sql of ACCOUNTS_MIGRATE_SQL) {
+    for (const sql of [...ACCOUNTS_MIGRATE_SQL, ...TRANSACTIONS_MIGRATE_SQL]) {
       try {
         this.ctx.storage.sql.exec(sql);
       } catch {
@@ -224,10 +253,12 @@ export class UserDO extends DurableObject<Env> {
       review_status: String(row.review_status) as Transaction["review_status"],
       status: "posted",
       posted_at: String(row.posted_at),
+      name: row.name == null ? null : String(row.name),
       note: row.note == null ? null : String(row.note),
       transfer_pair_id:
         row.transfer_pair_id == null ? null : String(row.transfer_pair_id),
       fingerprint: row.fingerprint == null ? null : String(row.fingerprint),
+      is_split_parent: Number(row.is_split_parent ?? 0) === 1,
     };
   }
 
@@ -320,12 +351,69 @@ export class UserDO extends DurableObject<Env> {
         review_status: String(row.review_status) as Transaction["review_status"],
         status: "posted",
         posted_at: String(row.posted_at),
+        name: row.name == null ? null : String(row.name),
         note: row.note == null ? null : String(row.note),
         transfer_pair_id:
           row.transfer_pair_id == null ? null : String(row.transfer_pair_id),
         fingerprint: row.fingerprint == null ? null : String(row.fingerprint),
+        is_split_parent: Number(row.is_split_parent ?? 0) === 1,
       }),
     );
+  }
+
+  private listNameRules(): NameRule[] {
+    return [...this.ctx.storage.sql.exec("SELECT * FROM name_rules")].map((row) => ({
+      id: String(row.id),
+      match_type: String(row.match_type) as NameRule["match_type"],
+      pattern: String(row.pattern),
+      category_id: String(row.category_id),
+      apply_historically: Number(row.apply_historically) === 1,
+      updated_at: String(row.updated_at),
+    }));
+  }
+
+  private listTags(): Tag[] {
+    return [...this.ctx.storage.sql.exec("SELECT * FROM tags ORDER BY name ASC")].map(
+      (row) => ({
+        id: String(row.id),
+        name: String(row.name),
+        color: String(row.color ?? "#64748b"),
+      }),
+    );
+  }
+
+  private listTransactionTags(transactionId?: string) {
+    const rows = transactionId
+      ? [
+          ...this.ctx.storage.sql.exec(
+            "SELECT * FROM transaction_tags WHERE transaction_id = ?",
+            transactionId,
+          ),
+        ]
+      : [...this.ctx.storage.sql.exec("SELECT * FROM transaction_tags")];
+    return rows.map((row) => ({
+      transaction_id: String(row.transaction_id),
+      tag_id: String(row.tag_id),
+    }));
+  }
+
+  private listSplitLegs(transactionId?: string): SplitLeg[] {
+    const rows = transactionId
+      ? [
+          ...this.ctx.storage.sql.exec(
+            "SELECT * FROM split_legs WHERE transaction_id = ?",
+            transactionId,
+          ),
+        ]
+      : [...this.ctx.storage.sql.exec("SELECT * FROM split_legs")];
+    return rows.map((row) => ({
+      id: String(row.id),
+      transaction_id: String(row.transaction_id),
+      category_id: String(row.category_id),
+      amount: Number(row.amount),
+      year_month_override:
+        row.year_month_override == null ? null : String(row.year_month_override),
+    }));
   }
 
   private ensureMonthBudgets(yearMonth: string): void {
@@ -415,18 +503,39 @@ export class UserDO extends DurableObject<Env> {
     });
     const now = new Date().toISOString();
     const reviewStatus = normalizeReviewStatus(item.review_status ?? "needs_review");
+    const txnName = item.txn_name ?? item.note ?? null;
+
+    let categoryId = item.category_id ?? null;
+    const draft: Transaction = {
+      id: item.id!,
+      account_id: item.account_id!,
+      category_id: categoryId,
+      amount: item.amount!,
+      currency: item.currency!,
+      amount_account: amounts.amount_account,
+      amount_reporting: amounts.amount_reporting,
+      type: (item.type as Transaction["type"]) ?? "regular",
+      is_refund: !!item.is_refund,
+      review_status: reviewStatus,
+      posted_at: item.posted_at!,
+      name: txnName,
+      note: item.note ?? null,
+      transfer_pair_id: item.transfer_pair_id ?? null,
+      fingerprint: item.fingerprint ?? null,
+    };
+    categoryId = applyNameRuleToTransaction(draft, this.listNameRules()).category_id;
     const before = item.id ? this.loadTxnDomainById(item.id) : null;
 
     this.ctx.storage.sql.exec(
       `INSERT OR REPLACE INTO transactions (
         id, account_id, category_id, amount, currency,
         amount_account, amount_reporting, type, is_refund,
-        review_status, posted_at, note, transfer_pair_id, fingerprint,
-        synced, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+        review_status, posted_at, name, note, transfer_pair_id, fingerprint,
+        is_split_parent, synced, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
       item.id,
       item.account_id,
-      item.category_id ?? null,
+      categoryId,
       item.amount,
       item.currency!.toUpperCase(),
       amounts.amount_account,
@@ -435,9 +544,11 @@ export class UserDO extends DurableObject<Env> {
       item.is_refund ? 1 : 0,
       reviewStatus,
       item.posted_at,
+      txnName,
       item.note ?? null,
       item.transfer_pair_id ?? null,
       item.fingerprint ?? null,
+      item.is_split_parent ? 1 : 0,
       now,
       now,
     );
@@ -450,6 +561,105 @@ export class UserDO extends DurableObject<Env> {
       this.applyAccountBalanceDelta(after.account_id, balanceDeltaForTxn(after));
     }
     return item.id!;
+  }
+
+  private applyRuleUpsert(item: SyncPushItem): string {
+    const id = item.id ?? crypto.randomUUID();
+    const now = item.updated_at ?? new Date().toISOString();
+    const matchType = item.match_type ?? "contains";
+    const pattern = item.pattern ?? "";
+    const categoryId = item.category_id;
+    if (!categoryId) throw new Error("rule_upsert requires category_id");
+    if (!pattern) throw new Error("rule_upsert requires pattern");
+    this.ctx.storage.sql.exec(
+      `INSERT INTO name_rules (id, match_type, pattern, category_id, apply_historically, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         match_type = excluded.match_type,
+         pattern = excluded.pattern,
+         category_id = excluded.category_id,
+         apply_historically = excluded.apply_historically,
+         updated_at = excluded.updated_at`,
+      id,
+      matchType,
+      pattern,
+      categoryId,
+      item.apply_historically === false ? 0 : 1,
+      now,
+    );
+    return id;
+  }
+
+  private applyTagUpsert(item: SyncPushItem): string {
+    const id = item.id ?? crypto.randomUUID();
+    const name = item.name ?? "Tag";
+    const color = item.color ?? "#64748b";
+    this.ctx.storage.sql.exec(
+      `INSERT INTO tags (id, name, color) VALUES (?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET name = excluded.name, color = excluded.color`,
+      id,
+      name,
+      color,
+    );
+    return id;
+  }
+
+  private applyTagAssign(item: SyncPushItem, assign: boolean): string {
+    const txnId = item.transaction_id ?? item.id;
+    const tagId = item.tag_id;
+    if (!txnId || !tagId) throw new Error("tag_assign requires transaction_id and tag_id");
+    if (assign) {
+      this.ctx.storage.sql.exec(
+        `INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)`,
+        txnId,
+        tagId,
+      );
+    } else {
+      this.ctx.storage.sql.exec(
+        `DELETE FROM transaction_tags WHERE transaction_id = ? AND tag_id = ?`,
+        txnId,
+        tagId,
+      );
+    }
+    return `${txnId}:${tagId}`;
+  }
+
+  private applySplitSet(item: SyncPushItem): string {
+    const txnId = item.transaction_id ?? item.id;
+    if (!txnId) throw new Error("split_set requires transaction_id");
+    const legs = item.legs ?? [];
+    const parentRows = [
+      ...this.ctx.storage.sql.exec(
+        "SELECT amount FROM transactions WHERE id = ? LIMIT 1",
+        txnId,
+      ),
+    ];
+    if (parentRows.length === 0) throw new Error("split_set parent not found");
+    const parentAmount = Number(parentRows[0]!.amount);
+    assertBalancedSplit(
+      parentAmount,
+      legs.map((l) => ({ amount: Number(l.amount) })),
+    );
+    this.ctx.storage.sql.exec(`DELETE FROM split_legs WHERE transaction_id = ?`, txnId);
+    for (const leg of legs) {
+      const legId = leg.id ?? crypto.randomUUID();
+      this.ctx.storage.sql.exec(
+        `INSERT INTO split_legs (id, transaction_id, category_id, amount, year_month_override)
+         VALUES (?, ?, ?, ?, ?)`,
+        legId,
+        txnId,
+        leg.category_id,
+        Number(leg.amount),
+        leg.year_month_override ?? null,
+      );
+    }
+    const now = new Date().toISOString();
+    this.ctx.storage.sql.exec(
+      `UPDATE transactions SET is_split_parent = 1, updated_at = ? WHERE id = ?`,
+      now,
+      txnId,
+    );
+    return txnId;
   }
 
   private listAccounts(): Account[] {
@@ -531,11 +741,13 @@ export class UserDO extends DurableObject<Env> {
     const categories = this.listCategories();
     const budgets = this.listBudgets(yearMonth);
     const transactions = this.listTransactionsDomain();
+    const split_legs = this.listSplitLegs();
     const rows = buildCategoryBudgetRows({
       categories,
       budgets,
       transactions,
       year_month: yearMonth,
+      split_legs,
     });
     return {
       year_month: yearMonth,
@@ -561,17 +773,20 @@ export class UserDO extends DurableObject<Env> {
     const categories = this.listCategories();
     const budgets = this.listBudgets(yearMonth);
     const transactions = this.listTransactionsDomain();
+    const split_legs = this.listSplitLegs();
     const rows = buildCategoryBudgetRows({
       categories,
       budgets,
       transactions,
       year_month: yearMonth,
+      split_legs,
     });
     const totalBudget = totalEffectiveBudget(rows);
     const cumulative = cumulativeSpendByDay({
       transactions,
       year_month: yearMonth,
       categories,
+      split_legs,
     });
     const pace = budgetPaceByDay(totalBudget, yearMonth);
     return {
@@ -643,6 +858,26 @@ export class UserDO extends DurableObject<Env> {
           saved.push(this.applyAccountUpsert(item));
           continue;
         }
+        if (item.op === "rule_upsert") {
+          saved.push(this.applyRuleUpsert(item));
+          continue;
+        }
+        if (item.op === "tag_upsert") {
+          saved.push(this.applyTagUpsert(item));
+          continue;
+        }
+        if (item.op === "tag_assign") {
+          saved.push(this.applyTagAssign(item, true));
+          continue;
+        }
+        if (item.op === "tag_unassign") {
+          saved.push(this.applyTagAssign(item, false));
+          continue;
+        }
+        if (item.op === "split_set") {
+          saved.push(this.applySplitSet(item));
+          continue;
+        }
         saved.push(this.applyUpsert(item, rateBook));
       }
 
@@ -679,6 +914,22 @@ export class UserDO extends DurableObject<Env> {
 
     if (request.method === "GET" && url.pathname === "/accounts") {
       return Response.json(this.accountsPayload());
+    }
+
+    if (request.method === "GET" && url.pathname === "/rules") {
+      return Response.json({ rules: this.listNameRules() });
+    }
+
+    if (request.method === "GET" && url.pathname === "/tags") {
+      return Response.json({
+        tags: this.listTags(),
+        transaction_tags: this.listTransactionTags(),
+      });
+    }
+
+    if (request.method === "GET" && url.pathname === "/splits") {
+      const txnId = url.searchParams.get("transaction_id") ?? undefined;
+      return Response.json({ legs: this.listSplitLegs(txnId) });
     }
 
     return new Response("Not found", { status: 404 });

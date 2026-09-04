@@ -101,6 +101,16 @@ app.get("/cash-flow", async (c) => {
 
 app.get("/accounts", async (c) => proxyDo(c, "/accounts"));
 
+app.get("/rules", async (c) => proxyDo(c, "/rules"));
+
+app.get("/tags", async (c) => proxyDo(c, "/tags"));
+
+app.get("/splits", async (c) => {
+  const txnId = c.req.query("transaction_id");
+  const q = txnId ? `?transaction_id=${encodeURIComponent(txnId)}` : "";
+  return proxyDo(c, `/splits${q}`);
+});
+
 app.get("/do/health", async (c) => proxyDo(c, "/health"));
 
 export default app;
