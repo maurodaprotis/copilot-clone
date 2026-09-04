@@ -25,7 +25,13 @@ function run(cmd, args, cwd) {
   const res = spawnSync(cmd, args, {
     cwd,
     stdio: "inherit",
-    env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: accountId },
+    env: {
+      ...process.env,
+      CLOUDFLARE_ACCOUNT_ID: accountId,
+      EXPO_PUBLIC_API_URL:
+        process.env.EXPO_PUBLIC_API_URL ||
+        "https://copilot-clone-api.maurodaprotis.workers.dev",
+    },
   });
   if (res.status !== 0) process.exit(res.status ?? 1);
 }

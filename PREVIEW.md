@@ -20,6 +20,13 @@ Redeploy web:
 node apps/mobile/scripts/deploy-pages.mjs
 ```
 
+## How Paul opens the app
+
+1. Open **https://copilot-clone.pages.dev** in Chrome/Edge/Firefox (desktop).
+2. Use Cash Flow / Categories / Transactions / More.
+3. More → Settings / Import CSV as in the click-test below.
+4. Durable data: use Sync against the Worker API (local SQLite on web is best-effort).
+
 ## API surface (Settings / FX / CSV import)
 
 - **Settings:** GET|POST /settings — reporting_currency (USD default), default_fx_series (official|parallel|custom), timezone/locale stubs
@@ -47,9 +54,3 @@ node apps/mobile/scripts/deploy-pages.mjs
 4. Optional **Undo** soft-deletes created txns.
 
 No Plaid/Postgres. needs_review preserved.
-
-## Web hosting notes
-
-- Static Expo web export on Pages project copilot-clone.
-- Local data uses expo-sqlite (WASM/OPFS). If it fails in private mode, try Chrome.
-- Rebuild with EXPO_PUBLIC_API_URL set to the Worker URL, then export -p web.
