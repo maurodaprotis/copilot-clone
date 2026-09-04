@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   is_split_parent INTEGER NOT NULL DEFAULT 0,
   synced INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
 );
 `;
 
@@ -48,16 +49,15 @@ CREATE TABLE IF NOT EXISTS accounts (
 );
 `;
 
-/** Best-effort ALTERs for DBs created before include_in_net_worth / current_balance. */
 export const ACCOUNTS_MIGRATE_SQL = [
   "ALTER TABLE accounts ADD COLUMN include_in_net_worth INTEGER NOT NULL DEFAULT 1",
   "ALTER TABLE accounts ADD COLUMN current_balance REAL NOT NULL DEFAULT 0",
 ];
 
-/** Best-effort ALTERs for txn name / split parent on older DBs. */
 export const TRANSACTIONS_MIGRATE_SQL = [
   "ALTER TABLE transactions ADD COLUMN name TEXT",
   "ALTER TABLE transactions ADD COLUMN is_split_parent INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE transactions ADD COLUMN deleted_at TEXT",
 ];
 
 export const FX_RATES_DDL = `
@@ -66,7 +66,62 @@ CREATE TABLE IF NOT EXISTS fx_rates (
   to_currency TEXT NOT NULL,
   on_date TEXT NOT NULL,
   rate REAL NOT NULL,
-  PRIMARY KEY (from_currency, to_currency, on_date)
+  rate_book TEXT NOT NULL DEFAULT 'parallel',
+  source TEXT NOT NULL DEFAULT 'manual',
+  PRIMARY KEY (from_currency, to_currency, on_date, rate_book)
+);
+`;
+
+export const FX_RATES_MIGRATE_SQL = [
+  "ALTER TABLE fx_rates ADD COLUMN rate_book TEXT NOT NULL DEFAULT 'parallel'",
+  "ALTER TABLE fx_rates ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'",
+];
+
+export const USER_SETTINGS_DDL = `
+CREATE TABLE IF NOT EXISTS user_settings (
+  id TEXT PRIMARY KEY NOT NULL,
+  reporting_currency TEXT NOT NULL DEFAULT 'USD',
+  locale TEXT NOT NULL DEFAULT 'en-US',
+  timezone TEXT NOT NULL DEFAULT 'America/Argentina/Salta',
+  default_fx_series TEXT NOT NULL DEFAULT 'parallel'
+);
+`;
+
+export const IMPORT_JOBS_DDL = `
+CREATE TABLE IF NOT EXISTS import_jobs (
+  id TEXT PRIMARY KEY NOT NULL,
+  type TEXT NOT NULL DEFAULT 'bank_csv',
+  status TEXT NOT NULL,
+  account_id TEXT,
+  currency TEXT,
+  file_name TEXT,
+  mime TEXT,
+  detected_format TEXT,
+  mapping_json TEXT,
+  csv_text TEXT,
+  error_log TEXT,
+  created_at TEXT NOT NULL,
+  committed_at TEXT,
+  undone_at TEXT,
+  row_count INTEGER NOT NULL DEFAULT 0,
+  created_count INTEGER NOT NULL DEFAULT 0,
+  duplicate_count INTEGER NOT NULL DEFAULT 0
+);
+`;
+
+export const IMPORT_ROWS_DDL = `
+CREATE TABLE IF NOT EXISTS import_rows (
+  id TEXT PRIMARY KEY NOT NULL,
+  job_id TEXT NOT NULL,
+  raw_payload TEXT NOT NULL,
+  row_date TEXT,
+  name TEXT,
+  amount REAL,
+  currency TEXT,
+  fingerprint TEXT,
+  action TEXT NOT NULL DEFAULT 'create_txn',
+  result_entity_id TEXT,
+  row_index INTEGER NOT NULL DEFAULT 0
 );
 `;
 
@@ -141,31 +196,14 @@ CREATE TABLE IF NOT EXISTS split_legs (
 );
 `;
 
-/** Client keeps outbox + synced flag; server DO does not rely on synced. */
 export const CLIENT_SCHEMA = [
-  TRANSACTIONS_DDL,
-  OUTBOX_DDL,
-  ACCOUNTS_DDL,
-  FX_RATES_DDL,
-  CATEGORY_GROUPS_DDL,
-  CATEGORIES_DDL,
-  BUDGET_MONTHS_DDL,
-  NAME_RULES_DDL,
-  TAGS_DDL,
-  TRANSACTION_TAGS_DDL,
-  SPLIT_LEGS_DDL,
+  TRANSACTIONS_DDL, OUTBOX_DDL, ACCOUNTS_DDL, FX_RATES_DDL, USER_SETTINGS_DDL,
+  IMPORT_JOBS_DDL, IMPORT_ROWS_DDL, CATEGORY_GROUPS_DDL, CATEGORIES_DDL,
+  BUDGET_MONTHS_DDL, NAME_RULES_DDL, TAGS_DDL, TRANSACTION_TAGS_DDL, SPLIT_LEGS_DDL,
 ].join("\n");
 
-/** Server schema includes synced column for INSERT compatibility. */
 export const SERVER_SCHEMA = [
-  TRANSACTIONS_DDL,
-  ACCOUNTS_DDL,
-  FX_RATES_DDL,
-  CATEGORY_GROUPS_DDL,
-  CATEGORIES_DDL,
-  BUDGET_MONTHS_DDL,
-  NAME_RULES_DDL,
-  TAGS_DDL,
-  TRANSACTION_TAGS_DDL,
-  SPLIT_LEGS_DDL,
+  TRANSACTIONS_DDL, ACCOUNTS_DDL, FX_RATES_DDL, USER_SETTINGS_DDL,
+  IMPORT_JOBS_DDL, IMPORT_ROWS_DDL, CATEGORY_GROUPS_DDL, CATEGORIES_DDL,
+  BUDGET_MONTHS_DDL, NAME_RULES_DDL, TAGS_DDL, TRANSACTION_TAGS_DDL, SPLIT_LEGS_DDL,
 ].join("\n");
