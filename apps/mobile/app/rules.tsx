@@ -149,7 +149,7 @@ export default function RulesScreen() {
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: "#f7f7f8" },
+  scroll: { flex: 1, backgroundColor: "#F5F7FA" },
   container: { padding: 20, paddingBottom: 48 },
   sub: { color: "#666", marginBottom: 16, fontSize: 12 },
   card: {
@@ -180,11 +180,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     backgroundColor: "#fafafa",
   },
-  chipOn: { backgroundColor: "#1a1a2e", borderColor: "#1a1a2e" },
+  chipOn: { backgroundColor: "#2F6BFF", borderColor: "#2F6BFF" },
   chipText: { fontSize: 12, color: "#334" },
   chipTextOn: { color: "#fff", fontWeight: "600" },
   btn: {
-    backgroundColor: "#1a1a2e",
+    backgroundColor: "#2F6BFF",
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: "center",

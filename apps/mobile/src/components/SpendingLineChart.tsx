@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import { colors, type } from "../theme";
 
 type Props = {
   cumulative: number[];
@@ -40,6 +41,7 @@ export function SpendingLineChart({
   const spendLine = visibleCum.map((v, i) => point(i, v)).join(" ");
   const spentNow = visibleCum[visibleCum.length - 1] ?? 0;
   const paceNow = pace[today] ?? 0;
+  const over = spentNow > paceNow;
 
   return (
     <View style={styles.wrap}>
@@ -47,14 +49,14 @@ export function SpendingLineChart({
         <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
           <polyline
             fill="none"
-            stroke="#94a3b8"
+            stroke={colors.textTertiary}
             strokeWidth="2"
             strokeDasharray="4 4"
             points={paceLine}
           />
           <polyline
             fill="none"
-            stroke="#0d9488"
+            stroke={over ? colors.danger : colors.primary}
             strokeWidth="2.5"
             points={spendLine}
           />
@@ -62,11 +64,20 @@ export function SpendingLineChart({
       </View>
       <View style={styles.legend}>
         <Text style={styles.legendItem}>
-          <Text style={{ color: "#0d9488", fontWeight: "700" }}>● </Text>
+          <Text
+            style={{
+              color: over ? colors.danger : colors.primary,
+              fontWeight: "700",
+            }}
+          >
+            ●{" "}
+          </Text>
           Spend MTD ${spentNow.toFixed(0)}
         </Text>
         <Text style={styles.legendItem}>
-          <Text style={{ color: "#94a3b8", fontWeight: "700" }}>◌ </Text>
+          <Text style={{ color: colors.textTertiary, fontWeight: "700" }}>
+            ◌{" "}
+          </Text>
           Budget pace ${paceNow.toFixed(0)}
         </Text>
       </View>
@@ -81,5 +92,5 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginTop: 8,
   },
-  legendItem: { fontSize: 12, color: "#334" },
+  legendItem: { ...type.footnote, color: colors.text },
 });
