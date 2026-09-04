@@ -3,6 +3,7 @@ import {
   applyNameRuleHistorically,
   applyNameRuleToTransaction,
   assertBalancedSplit,
+  ClientError,
   computeCategorySpent,
   equalSplitAmounts,
   hitsBudget,
@@ -157,6 +158,20 @@ describe("Splits", () => {
     expect(isBalancedSplit(100, [{ amount: 40 }, { amount: 50 }])).toBe(false);
     expect(isBalancedSplit(100, [{ amount: 40 }, { amount: 60 }])).toBe(true);
     expect(() => assertBalancedSplit(100, [{ amount: 1 }])).toThrow(/Unbalanced/);
+    try {
+      assertBalancedSplit(100, [{ amount: 40 }, { amount: 50 }]);
+      expect.unreachable("expected unbalanced_split ClientError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ClientError);
+      const ce = err as ClientError;
+      expect(ce.code).toBe("unbalanced_split");
+      expect(ce.status).toBe(400);
+      expect(ce.toJSON()).toEqual({
+        error: "unbalanced_split",
+        message: ce.message,
+      });
+      expect(ce.message).toMatch(/Unbalanced split/);
+    }
     expect(equalSplitAmounts(100, 3)).toEqual([33.34, 33.33, 33.33]);
   });
 
