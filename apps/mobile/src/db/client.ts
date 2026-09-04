@@ -1,6 +1,6 @@
 import * as SQLite from "expo-sqlite";
-import { CLIENT_SCHEMA } from "@copilot-clone/db";
-import { seedFxRates } from "@copilot-clone/domain";
+import { CLIENT_SCHEMA, seedBudgetRows, seedCategoryGroupRows, seedCategoryRows } from "@copilot-clone/db";
+import { currentYearMonth, seedFxRates } from "@copilot-clone/domain";
 import {
   DEMO_ACCOUNT_CURRENCY,
   DEMO_ACCOUNT_ID,
@@ -28,10 +28,50 @@ async function seedDefaults(db: SQLite.SQLiteDatabase): Promise<void> {
       row.rate,
     );
   }
+
+  for (const g of seedCategoryGroupRows()) {
+    await db.runAsync(
+      `INSERT OR IGNORE INTO category_groups (id, name, sort_order, is_system)
+       VALUES (?, ?, ?, ?)`,
+      g.id,
+      g.name,
+      g.sort_order,
+      g.is_system,
+    );
+  }
+  for (const c of seedCategoryRows()) {
+    await db.runAsync(
+      `INSERT OR IGNORE INTO categories (
+        id, group_id, name, emoji, color,
+        exclude_from_budget, is_income_category, archived, sort_order
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      c.id,
+      c.group_id,
+      c.name,
+      c.emoji,
+      c.color,
+      c.exclude_from_budget,
+      c.is_income_category,
+      c.archived,
+      c.sort_order,
+    );
+  }
+  for (const b of seedBudgetRows(currentYearMonth())) {
+    await db.runAsync(
+      `INSERT OR IGNORE INTO budget_months (
+        category_id, year_month, budgeted_amount, rollover_mode, rollover_from_prior
+      ) VALUES (?, ?, ?, ?, ?)`,
+      b.category_id,
+      b.year_month,
+      b.budgeted_amount,
+      b.rollover_mode,
+      b.rollover_from_prior,
+    );
+  }
 }
 
+
 async function migrateReviewStatus(db: SQLite.SQLiteDatabase): Promise<void> {
-  // Legacy: review_status "pending" meant needs_review (TxnStatus owns "pending").
   await db.runAsync(
     `UPDATE transactions SET review_status = 'needs_review'
      WHERE review_status = 'pending'`,

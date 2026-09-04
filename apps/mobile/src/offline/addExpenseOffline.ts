@@ -30,6 +30,7 @@ export async function addExpenseOffline(
   const db = dbOverride ?? (await (await import("../db/client")).getDb());
   const id = input.id ?? crypto.randomUUID();
   const posted_at = input.posted_at ?? new Date().toISOString();
+  // Prefer caller book; otherwise seeded USD/ARS so convert does not warn.
   const rate_book =
     input.rate_book && Object.keys(input.rate_book).length > 0
       ? input.rate_book

@@ -46,48 +46,52 @@ function doStub(env: Env, userId: string) {
   return env.USER_DO.get(id);
 }
 
-app.post("/sync", async (c) => {
+async function proxyDo(
+  c: { env: Env; req: { header: (n: string) => string | undefined; url: string } },
+  pathAndQuery: string,
+  init?: RequestInit,
+): Promise<Response> {
   const userId = userStubId(c);
   const stub = doStub(c.env, userId);
+  const res = await stub.fetch(`https://do${pathAndQuery}`, init);
+  return new Response(res.body, {
+    status: res.status,
+    headers: {
+      "content-type": "application/json",
+      "access-control-allow-origin": "*",
+    },
+  });
+}
+
+app.post("/sync", async (c) => {
   const body = await c.req.text();
-  const res = await stub.fetch("https://do/sync", {
+  return proxyDo(c, "/sync", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body,
   });
-  return new Response(res.body, {
-    status: res.status,
-    headers: {
-      "content-type": "application/json",
-      "access-control-allow-origin": "*",
-    },
-  });
 });
 
-app.get("/transactions", async (c) => {
-  const userId = userStubId(c);
-  const stub = doStub(c.env, userId);
-  const res = await stub.fetch("https://do/transactions");
-  return new Response(res.body, {
-    status: res.status,
-    headers: {
-      "content-type": "application/json",
-      "access-control-allow-origin": "*",
-    },
-  });
+app.get("/transactions", async (c) => proxyDo(c, "/transactions"));
+
+app.get("/categories", async (c) => {
+  const month = c.req.query("month");
+  const q = month ? `?month=${encodeURIComponent(month)}` : "";
+  return proxyDo(c, `/categories${q}`);
 });
 
-app.get("/do/health", async (c) => {
-  const userId = userStubId(c);
-  const stub = doStub(c.env, userId);
-  const res = await stub.fetch("https://do/health");
-  return new Response(res.body, {
-    status: res.status,
-    headers: {
-      "content-type": "application/json",
-      "access-control-allow-origin": "*",
-    },
-  });
+app.get("/budgets", async (c) => {
+  const month = c.req.query("month");
+  const q = month ? `?month=${encodeURIComponent(month)}` : "";
+  return proxyDo(c, `/budgets${q}`);
 });
+
+app.get("/dashboard/spending", async (c) => {
+  const month = c.req.query("month");
+  const q = month ? `?month=${encodeURIComponent(month)}` : "";
+  return proxyDo(c, `/dashboard/spending${q}`);
+});
+
+app.get("/do/health", async (c) => proxyDo(c, "/health"));
 
 export default app;

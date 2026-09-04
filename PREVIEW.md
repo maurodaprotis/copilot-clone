@@ -1,37 +1,22 @@
-# Preview -- offline to To Review to sync
+# Preview -- Categories + Budgets + Dashboard spending line
 
 ## URLs
 
 - Worker API: https://copilot-clone-api.maurodaprotis.workers.dev
 - Health: GET /health
-- Sync: POST /sync (header x-user-id: demo-user)
-- DO store: GET /transactions
+- Sync: POST /sync -- upsert | review | budget_upsert
+- Categories: GET /categories?month=YYYY-MM
+- Spending: GET /dashboard/spending?month=YYYY-MM
 
 ## Naming
 
 - review_status: needs_review | reviewed | excluded (NOT pending)
-- pending is TxnStatus (bank pending vs posted), separate from ReviewStatus
-- Legacy DO/client rows with review_status pending normalize to needs_review on read/write
+- pending is TxnStatus, separate from ReviewStatus
 
-## FX seed
+## Click-test
 
-UserDO and mobile client seed USD/ARS rate 1400 (as_of demo + recent) on first access so USD to ARS convert does not warn.
+1. Categories: spent/budget/remaining USD; tap to edit budget.
+2. Transactions: add offline needs_review (no budget hit); Review then hits.
+3. Dashboard spending line vs budget pace; pending excluded.
 
-## API smoke
-
-pnpm --filter @copilot-clone/api smoke -- https://copilot-clone-api.maurodaprotis.workers.dev
-
-Expect: needs_review upsert, seeded FX (amount_account 70000), idempotent re-push, review op -> reviewed.
-
-## Mobile web
-
-export EXPO_PUBLIC_API_URL=https://copilot-clone-api.maurodaprotis.workers.dev
-pnpm --filter @copilot-clone/mobile web
-
-1. Transactions: Add offline (local Sqlite + outbox, needs_review).
-2. Dashboard: appears under To Review.
-3. Sync now: outbox clears; still needs_review.
-4. Review: leaves To Review; syncs review to UserDO.
-5. curl transactions endpoint with x-user-id demo-user - expect review_status needs_review until reviewed.
-
-Expo web is not on Pages yet; use local web + Worker URL.
+No rebalance UI. No Plaid/Postgres.

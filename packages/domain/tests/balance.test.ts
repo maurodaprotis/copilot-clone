@@ -41,31 +41,19 @@ describe("balance and budget rules", () => {
   });
 
   it("regular non-excluded hits budgets", () => {
-    expect(hitsBudget(txn({ type: "regular", review_status: "reviewed" }))).toBe(
-      true,
-    );
-    expect(hitsBudget(txn({ type: "regular", review_status: "excluded" }))).toBe(
-      false,
-    );
-    expect(hitsBudget(txn({ type: "income", review_status: "reviewed" }))).toBe(
-      false,
-    );
+    expect(hitsBudget(txn({ type: "regular", review_status: "reviewed" }))).toBe(true);
+    expect(hitsBudget(txn({ type: "regular", review_status: "excluded" }))).toBe(false);
+    expect(hitsBudget(txn({ type: "income", review_status: "reviewed" }))).toBe(false);
   });
 
-  it("needs_review does not hit budgets", () => {
+  it("needs_review and pending status do not hit budgets", () => {
     expect(hitsBudget(txn({ review_status: "needs_review" }))).toBe(false);
-    expect(
-      hitsBudget(txn({ status: "pending", review_status: "reviewed" })),
-    ).toBe(false);
+    expect(hitsBudget(txn({ status: "pending", review_status: "reviewed" }))).toBe(false);
   });
 
   it("signed amounts", () => {
-    expect(signedAmountAccount(txn({ type: "regular", is_refund: false }))).toBe(
-      -100,
-    );
-    expect(signedAmountAccount(txn({ type: "regular", is_refund: true }))).toBe(
-      100,
-    );
+    expect(signedAmountAccount(txn({ type: "regular", is_refund: false }))).toBe(-100);
+    expect(signedAmountAccount(txn({ type: "regular", is_refund: true }))).toBe(100);
     expect(signedAmountAccount(txn({ type: "income" }))).toBe(100);
   });
 });

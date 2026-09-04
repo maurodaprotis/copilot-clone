@@ -23,29 +23,38 @@ import {
   listToReview,
   type LocalTransaction,
 } from "../../src/offline/queries";
+import { listCategories } from "../../src/offline/budgets";
 import { reviewTransaction } from "../../src/offline/reviewTransaction";
 import { syncOutbox } from "../../src/offline/syncOutbox";
 import { createApiTransport } from "../../src/sync/apiTransport";
 
 export default function TransactionsScreen() {
-  const [toReview, setToReview] = useState<LocalTransaction[]>([]);
+  const [pending, setPending] = useState<LocalTransaction[]>([]);
   const [all, setAll] = useState<LocalTransaction[]>([]);
   const [outboxCount, setOutboxCount] = useState(0);
   const [amount, setAmount] = useState("50");
   const [note, setNote] = useState("Café offline");
   const [currency, setCurrency] = useState("USD");
+  const [categoryId, setCategoryId] = useState("cat-dining");
+  const [categoryNames, setCategoryNames] = useState<Record<string, string>>(
+    {},
+  );
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    const [p, a, o] = await Promise.all([
+    const [p, a, o, cats] = await Promise.all([
       listToReview(),
       listAllTransactions(),
       countOutbox(),
+      listCategories(),
     ]);
-    setToReview(p);
+    setPending(p);
     setAll(a);
     setOutboxCount(o);
+    const names: Record<string, string> = {};
+    for (const c of cats) names[c.id] = `${c.emoji} ${c.name}`;
+    setCategoryNames(names);
   }, []);
 
   useFocusEffect(
@@ -65,14 +74,15 @@ export default function TransactionsScreen() {
       }
       const { transactionId } = await addExpenseOffline({
         account_id: DEMO_ACCOUNT_ID,
+        category_id: categoryId,
         amount: n,
         currency,
         account_currency: DEMO_ACCOUNT_CURRENCY,
         reporting_currency: DEMO_REPORTING_CURRENCY,
         note: note || null,
-        rate_book: undefined, // client/UserDO seed USD/ARS 1400
+        rate_book: { "USD:ARS:2026-09-04": 1400 },
       });
-      setMsg(`Added offline needs_review txn ${transactionId.slice(0, 8)}…`);
+      setMsg(`Added offline pending txn ${transactionId.slice(0, 8)}…`);
       await reload();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
@@ -145,6 +155,27 @@ export default function TransactionsScreen() {
           onChangeText={setNote}
           placeholder="Note"
         />
+        <Text style={styles.catLabel}>Category (hits budget after Review)</Text>
+        <View style={styles.chipRow}>
+          {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map(
+            (id) => (
+              <Pressable
+                key={id}
+                style={[styles.chip, categoryId === id && styles.chipOn]}
+                onPress={() => setCategoryId(id)}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    categoryId === id && styles.chipTextOn,
+                  ]}
+                >
+                  {categoryNames[id] ?? id}
+                </Text>
+              </Pressable>
+            ),
+          )}
+        </View>
         <View style={styles.row}>
           <Pressable style={styles.btn} onPress={() => void onAddOffline()} disabled={busy}>
             <Text style={styles.btnText}>Add offline</Text>
@@ -156,15 +187,21 @@ export default function TransactionsScreen() {
         {msg ? <Text style={styles.msg}>{msg}</Text> : null}
       </View>
 
-      <Text style={styles.section}>To Review ({toReview.length})</Text>
-      {toReview.map((txn) => (
+      <Text style={styles.section}>To Review ({pending.length})</Text>
+      {pending.map((txn) => (
         <View key={txn.id} style={styles.card}>
           <View style={{ flex: 1 }}>
             <Text style={styles.cardTitle}>
               {txn.currency} {txn.amount.toFixed(2)}
               {txn.synced ? " · synced" : " · pending sync"}
             </Text>
-            <Text style={styles.cardMeta}>{txn.note || "Expense"} · needs review</Text>
+            <Text style={styles.cardMeta}>
+              {txn.note || "Expense"} ·{" "}
+              {txn.category_id
+                ? categoryNames[txn.category_id] ?? txn.category_id
+                : "uncategorized"}{" "}
+              · needs review
+            </Text>
           </View>
           <Pressable style={styles.reviewBtn} onPress={() => void onReview(txn.id)}>
             <Text style={styles.reviewText}>Review</Text>
@@ -179,7 +216,11 @@ export default function TransactionsScreen() {
             {txn.currency} {txn.amount.toFixed(2)} · {txn.review_status}
           </Text>
           <Text style={styles.cardMeta}>
-            {txn.note || "—"} · synced={txn.synced}
+            {txn.note || "—"} ·{" "}
+            {txn.category_id
+              ? categoryNames[txn.category_id] ?? txn.category_id
+              : "—"}{" "}
+            · synced={txn.synced}
           </Text>
         </View>
       ))}
@@ -201,6 +242,19 @@ const styles = StyleSheet.create({
     borderColor: "#e2e2e6",
   },
   label: { fontWeight: "600", marginBottom: 8 },
+  catLabel: { fontSize: 12, color: "#666", marginBottom: 6 },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 },
+  chip: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: "#fafafa",
+  },
+  chipOn: { backgroundColor: "#1a1a2e", borderColor: "#1a1a2e" },
+  chipText: { fontSize: 12, color: "#334" },
+  chipTextOn: { color: "#fff", fontWeight: "600" },
   input: {
     borderWidth: 1,
     borderColor: "#ddd",
