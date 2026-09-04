@@ -20,6 +20,11 @@ import { createApiTransport } from "../../src/sync/apiTransport";
 import { pullCategoriesFromApi } from "../../src/sync/pullCategories";
 import { SpendingLineChart } from "../../src/components/SpendingLineChart";
 import { API_URL } from "../../src/config";
+import type { Recurring } from "@copilot-clone/domain";
+import {
+  listUpcomingLocal,
+  pullRecurringsFromApi,
+} from "../../src/offline/recurrings";
 
 function formatMoney(amount: number, currency: string): string {
   return `${currency} ${amount.toFixed(2)}`;
@@ -37,6 +42,7 @@ export default function DashboardScreen() {
     budget_pace: number[];
     spent_mtd: number;
   } | null>(null);
+  const [upcoming, setUpcoming] = useState<Recurring[]>([]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -48,6 +54,12 @@ export default function DashboardScreen() {
       ]);
       setItems(rows);
       setSpend(line);
+      try {
+        const pulled = await pullRecurringsFromApi(14);
+        setUpcoming(pulled.upcoming);
+      } catch {
+        setUpcoming(await listUpcomingLocal(14));
+      }
     } finally {
       setLoading(false);
     }
@@ -132,6 +144,25 @@ export default function DashboardScreen() {
       </View>
 
       {status ? <Text style={styles.status}>{status}</Text> : null}
+
+      <Text style={styles.section}>Upcoming bills ({upcoming.length})</Text>
+      {upcoming.length === 0 && !loading ? (
+        <Text style={styles.empty}>
+          No bills due in the next 14 days. Add templates under More → Recurrings.
+        </Text>
+      ) : null}
+      {upcoming.map((r) => (
+        <View key={r.id} style={styles.card}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>
+              {formatMoney(r.expected_amount, r.currency)} · {r.name}
+            </Text>
+            <Text style={styles.cardMeta}>
+              due {r.next_expected_date} · {r.kind} · {r.cadence}
+            </Text>
+          </View>
+        </View>
+      ))}
 
       <Text style={styles.section}>To Review ({items.length})</Text>
 

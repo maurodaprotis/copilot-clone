@@ -43,6 +43,15 @@ import {
   type Tag,
   type Transaction,
   type UserSettings,
+  type Recurring,
+  type RecurringCadence,
+  type RecurringKind,
+  normalizeRecurringCadence,
+  normalizeRecurringKind,
+  matchReviewedTxnToRecurring,
+  rollForwardAfterMatch,
+  upcomingRecurrings,
+  DEFAULT_UPCOMING_WITHIN_DAYS,
 } from "@copilot-clone/domain";
 
 export interface Env {
@@ -59,7 +68,8 @@ type SyncPushItem = {
     | "tag_upsert"
     | "tag_assign"
     | "tag_unassign"
-    | "split_set";
+    | "split_set"
+    | "recurring_upsert";
   id?: string;
   account_id?: string;
   category_id?: string | null;
@@ -101,6 +111,12 @@ type SyncPushItem = {
     amount: number;
     year_month_override?: string | null;
   }>;
+  // recurring_upsert
+  kind?: RecurringKind;
+  cadence?: RecurringCadence;
+  expected_amount?: number;
+  next_expected_date?: string;
+  active?: boolean;
 };
 
 export class UserDO extends DurableObject<Env> {
@@ -751,6 +767,9 @@ export class UserDO extends DurableObject<Env> {
       const delta = balanceDeltaForTxn(after) - balanceDeltaForTxn(before);
       this.applyAccountBalanceDelta(after.account_id, delta);
     }
+    if (after && status === "reviewed") {
+      this.tryMatchRecurringForTxn(after, now);
+    }
     return item.id!;
   }
 
@@ -852,6 +871,9 @@ export class UserDO extends DurableObject<Env> {
     }
     if (after) {
       this.applyAccountBalanceDelta(after.account_id, balanceDeltaForTxn(after));
+    }
+    if (after && reviewStatus === "reviewed") {
+      this.tryMatchRecurringForTxn(after, now);
     }
     return item.id!;
   }
@@ -999,6 +1021,83 @@ export class UserDO extends DurableObject<Env> {
       balance,
     );
     return id;
+  }
+
+
+  private mapRecurring(row: Record<string, unknown>): Recurring {
+    return {
+      id: String(row.id),
+      name: String(row.name),
+      kind: normalizeRecurringKind(row.kind == null ? null : String(row.kind)),
+      cadence: normalizeRecurringCadence(row.cadence == null ? null : String(row.cadence)),
+      expected_amount: Number(row.expected_amount),
+      currency: String(row.currency).toUpperCase(),
+      category_id: row.category_id == null ? null : String(row.category_id),
+      account_id: row.account_id == null ? null : String(row.account_id),
+      next_expected_date: String(row.next_expected_date).slice(0, 10),
+      active: Number(row.active ?? 1) === 1,
+      updated_at: String(row.updated_at),
+    };
+  }
+
+  private listRecurrings(): Recurring[] {
+    return [...this.ctx.storage.sql.exec(
+      `SELECT * FROM recurrings ORDER BY next_expected_date ASC, name ASC`,
+    )].map((row) => this.mapRecurring(row as Record<string, unknown>));
+  }
+
+  private applyRecurringUpsert(item: SyncPushItem): string {
+    const id = item.id ?? crypto.randomUUID();
+    const now = item.updated_at ?? new Date().toISOString();
+    const name = (item.name ?? "").trim();
+    if (!name) throw new Error("recurring_upsert requires name");
+    const kind = normalizeRecurringKind(item.kind);
+    const cadence = normalizeRecurringCadence(item.cadence);
+    const expected = Number(item.expected_amount ?? 0);
+    const currency = (item.currency ?? "USD").toUpperCase();
+    const next = (item.next_expected_date ?? now).slice(0, 10);
+    const active = item.active === false ? 0 : 1;
+    this.ctx.storage.sql.exec(
+      `INSERT INTO recurrings (
+         id, name, kind, cadence, expected_amount, currency,
+         category_id, account_id, next_expected_date, active, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         name = excluded.name,
+         kind = excluded.kind,
+         cadence = excluded.cadence,
+         expected_amount = excluded.expected_amount,
+         currency = excluded.currency,
+         category_id = excluded.category_id,
+         account_id = excluded.account_id,
+         next_expected_date = excluded.next_expected_date,
+         active = excluded.active,
+         updated_at = excluded.updated_at`,
+      id,
+      name,
+      kind,
+      cadence,
+      expected,
+      currency,
+      item.category_id ?? null,
+      item.account_id ?? null,
+      next,
+      active,
+      now,
+    );
+    return id;
+  }
+
+  private tryMatchRecurringForTxn(txn: Transaction, now: string): void {
+    const match = matchReviewedTxnToRecurring(txn, this.listRecurrings());
+    if (!match) return;
+    const next = rollForwardAfterMatch(match.recurring, txn.posted_at);
+    this.ctx.storage.sql.exec(
+      `UPDATE recurrings SET next_expected_date = ?, updated_at = ? WHERE id = ?`,
+      next,
+      now,
+      match.recurring.id,
+    );
   }
 
   private cashFlowPayload(yearMonth: string) {
@@ -1250,6 +1349,10 @@ export class UserDO extends DurableObject<Env> {
             saved.push(this.applySplitSet(item));
             continue;
           }
+          if (item.op === "recurring_upsert") {
+            saved.push(this.applyRecurringUpsert(item));
+            continue;
+          }
           saved.push(this.applyUpsert(item, rateBook));
         }
       } catch (err) {
@@ -1312,6 +1415,22 @@ export class UserDO extends DurableObject<Env> {
       const txnId = url.searchParams.get("transaction_id") ?? undefined;
       return Response.json({ legs: this.listSplitLegs(txnId) });
     }
+
+    if (request.method === "GET" && url.pathname === "/recurrings") {
+      const withinRaw = url.searchParams.get("within_days");
+      const within = withinRaw != null && withinRaw !== ""
+        ? Number(withinRaw)
+        : DEFAULT_UPCOMING_WITHIN_DAYS;
+      const all = this.listRecurrings();
+      return Response.json({
+        recurrings: all,
+        upcoming: upcomingRecurrings(all, {
+          within_days: Number.isFinite(within) ? within : DEFAULT_UPCOMING_WITHIN_DAYS,
+        }),
+        within_days: Number.isFinite(within) ? within : DEFAULT_UPCOMING_WITHIN_DAYS,
+      });
+    }
+
 
     return new Response("Not found", { status: 404 });
   }
