@@ -332,7 +332,7 @@ export default function TransactionsScreen() {
         right={
           <View style={styles.headerActions}>
             <IconButton
-              glyph="↓"
+              glyph="↻"
               accessibilityLabel="Sync"
               onPress={() => void onSync()}
               loading={busy}
