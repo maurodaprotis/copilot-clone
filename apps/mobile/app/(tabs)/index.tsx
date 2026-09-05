@@ -85,6 +85,27 @@ async function fetchSpendingLine(yearMonth: string): Promise<SpendLine> {
   }
 }
 
+/** Same Categories API as the Categories tab (Pages-safe; expo-sqlite/wasm is weak). */
+async function fetchTopCategoriesFromApi(
+  yearMonth: string,
+): Promise<CategoryBudgetRow[] | null> {
+  try {
+    const res = await fetch(
+      `${API_URL.replace(/\/$/, "")}/categories?month=${encodeURIComponent(yearMonth)}`,
+      { headers: { "x-user-id": DEMO_USER_ID } },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { rows?: CategoryBudgetRow[] };
+    if (!data.rows || data.rows.length === 0) return null;
+    return [...data.rows]
+      .filter((r) => r.spent > 0 || r.budgeted_amount > 0)
+      .sort((x, y) => y.spent - x.spent)
+      .slice(0, 5);
+  } catch {
+    return null;
+  }
+}
+
 function formatMoney(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat(undefined, {
@@ -124,12 +145,15 @@ export default function DashboardScreen() {
       const spendP = fetchSpendingLine(ym);
       const reviewP = listToReview().catch(() => [] as LocalTransaction[]);
       const accountsP = getAccountsOverview().catch(() => null);
+      // Prefer API rows for Pages (same source as Categories tab).
+      const topCatsApiP = fetchTopCategoriesFromApi(ym);
       const overviewP = getCategoryBudgetOverview(ym).catch(() => null);
 
-      const [line, rows, accounts, overview] = await Promise.all([
+      const [line, rows, accounts, topFromApi, overview] = await Promise.all([
         spendP,
         reviewP,
         accountsP,
+        topCatsApiP,
         overviewP,
       ]);
       setSpend(line);
@@ -145,7 +169,9 @@ export default function DashboardScreen() {
         setAssets(a);
         setDebts(d);
       }
-      if (overview) {
+      if (topFromApi && topFromApi.length > 0) {
+        setTopCats(topFromApi);
+      } else if (overview) {
         setTopCats(
           [...overview.rows]
             .filter((r) => r.spent > 0 || r.budgeted_amount > 0)
