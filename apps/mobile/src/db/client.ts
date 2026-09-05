@@ -1,15 +1,31 @@
-import * as SQLite from "expo-sqlite";
-import { ACCOUNTS_MIGRATE_SQL, CLIENT_SCHEMA, FX_RATES_MIGRATE_SQL, TRANSACTIONS_MIGRATE_SQL, seedBudgetRows, seedCategoryGroupRows, seedCategoryRows } from "@copilot-clone/db";
+import { isWebRuntime } from "./runtime";
+import {
+  ACCOUNTS_MIGRATE_SQL,
+  CLIENT_SCHEMA,
+  FX_RATES_MIGRATE_SQL,
+  TRANSACTIONS_MIGRATE_SQL,
+  seedBudgetRows,
+  seedCategoryGroupRows,
+  seedCategoryRows,
+} from "@copilot-clone/db";
 import { currentYearMonth, defaultUserSettings, seedFxRates } from "@copilot-clone/domain";
 import {
   DEMO_ACCOUNT_CURRENCY,
   DEMO_ACCOUNT_ID,
 } from "../config";
+import { createMemoryDb } from "./memory";
 import type { LocalDb } from "./types";
 
 let dbPromise: Promise<LocalDb> | null = null;
 
-async function seedDefaults(db: SQLite.SQLiteDatabase): Promise<void> {
+type NativeSqliteDb = {
+  execAsync(sql: string): Promise<void>;
+  runAsync(sql: string, ...params: (string | number | null)[]): Promise<unknown>;
+  getFirstAsync<T>(sql: string, ...params: (string | number | null)[]): Promise<T | null>;
+  getAllAsync<T>(sql: string, ...params: (string | number | null)[]): Promise<T[]>;
+};
+
+async function seedDefaults(db: NativeSqliteDb): Promise<void> {
   await db.runAsync(
     `INSERT OR IGNORE INTO accounts (
        id, name, currency, type, is_archived, include_in_net_worth, current_balance
@@ -85,22 +101,20 @@ async function seedDefaults(db: SQLite.SQLiteDatabase): Promise<void> {
   }
 }
 
-
-async function migrateReviewStatus(db: SQLite.SQLiteDatabase): Promise<void> {
+async function migrateReviewStatus(db: NativeSqliteDb): Promise<void> {
   await db.runAsync(
     `UPDATE transactions SET review_status = 'needs_review'
      WHERE review_status = 'pending'`,
   );
 }
 
-
-async function migrateAccountTypes(db: SQLite.SQLiteDatabase): Promise<void> {
+async function migrateAccountTypes(db: NativeSqliteDb): Promise<void> {
   await db.runAsync(`UPDATE accounts SET type = 'other' WHERE type = 'cash'`);
   await db.runAsync(`UPDATE accounts SET type = 'depository' WHERE type = 'bank'`);
   await db.runAsync(`UPDATE accounts SET type = 'credit_card' WHERE type = 'credit'`);
 }
 
-async function migrateAccountBalances(db: SQLite.SQLiteDatabase): Promise<void> {
+async function migrateAccountBalances(db: NativeSqliteDb): Promise<void> {
   await db.execAsync(
     `CREATE TABLE IF NOT EXISTS _migrations (id TEXT PRIMARY KEY)`,
   );
@@ -168,31 +182,49 @@ async function migrateAccountBalances(db: SQLite.SQLiteDatabase): Promise<void> 
   );
 }
 
+async function openNativeDb(): Promise<LocalDb> {
+  // Dynamic import keeps expo-sqlite out of the Cloudflare Pages / web bundle path.
+  const SQLite = await import("expo-sqlite");
+  const db = await SQLite.openDatabaseAsync("copilot.db");
+  await db.execAsync(CLIENT_SCHEMA);
+  try {
+    await db.execAsync(
+      "ALTER TABLE transactions ADD COLUMN synced INTEGER NOT NULL DEFAULT 0",
+    );
+  } catch {
+    // column already exists
+  }
+  for (const sql of [
+    ...ACCOUNTS_MIGRATE_SQL,
+    ...TRANSACTIONS_MIGRATE_SQL,
+    ...FX_RATES_MIGRATE_SQL,
+  ]) {
+    try {
+      await db.execAsync(sql);
+    } catch {
+      // column already exists
+    }
+  }
+  await migrateReviewStatus(db);
+  await migrateAccountTypes(db);
+  await seedDefaults(db);
+  await migrateAccountBalances(db);
+  return db as unknown as LocalDb;
+}
+
+/**
+ * Local DB access.
+ * - Native (iOS/Android): expo-sqlite + outbox.
+ * - Web / Cloudflare Pages: in-memory LocalDb only — never load expo-sqlite
+ *   (WASM/SQLite is unreliable on Pages). Account create/list use the Worker API.
+ */
 export async function getDb(): Promise<LocalDb> {
   if (!dbPromise) {
     dbPromise = (async () => {
-      const db = await SQLite.openDatabaseAsync("copilot.db");
-      await db.execAsync(CLIENT_SCHEMA);
-      // Best-effort migrate older scaffold DBs missing synced column.
-      try {
-        await db.execAsync(
-          "ALTER TABLE transactions ADD COLUMN synced INTEGER NOT NULL DEFAULT 0",
-        );
-      } catch {
-        // column already exists
+      if (isWebRuntime()) {
+        return createMemoryDb();
       }
-      for (const sql of [...ACCOUNTS_MIGRATE_SQL, ...TRANSACTIONS_MIGRATE_SQL, ...FX_RATES_MIGRATE_SQL]) {
-        try {
-          await db.execAsync(sql);
-        } catch {
-          // column already exists
-        }
-      }
-      await migrateReviewStatus(db);
-      await migrateAccountTypes(db);
-      await seedDefaults(db);
-      await migrateAccountBalances(db);
-      return db as unknown as LocalDb;
+      return openNativeDb();
     })();
   }
   return dbPromise;

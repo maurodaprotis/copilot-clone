@@ -6,6 +6,9 @@ export type SyncTransport = (items: unknown[]) => Promise<{ ok: boolean; saved?:
  * Push pending outbox rows via transport (HTTP in prod, mock in tests).
  * On success: deletes outbox rows and marks transactions synced=1.
  * Does NOT change review_status — needs_review stays in To Review until reviewed.
+ *
+ * Web / Pages: getDb() returns in-memory LocalDb (never expo-sqlite). Account
+ * create on web bypasses outbox and posts account_upsert to the Worker directly.
  */
 export async function syncOutbox(
   transport: SyncTransport,

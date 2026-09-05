@@ -264,6 +264,18 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
         .sort((a, b) => String(b.posted_at).localeCompare(String(a.posted_at))) as T[];
     }
 
+    if (s.includes("FROM accounts")) {
+      return [...tables.accounts.values()].sort((a, b) => {
+        const t = String(a.type).localeCompare(String(b.type));
+        if (t !== 0) return t;
+        return String(a.name).localeCompare(String(b.name));
+      }) as T[];
+    }
+
+    if (s.includes("FROM fx_rates")) {
+      return [...tables.fx_rates.values()] as T[];
+    }
+
     if (s.includes("FROM transactions")) {
       return [...tables.transactions.values()].sort((a, b) =>
         String(b.posted_at).localeCompare(String(a.posted_at)),
