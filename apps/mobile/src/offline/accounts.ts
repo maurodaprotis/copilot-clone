@@ -1,4 +1,5 @@
 import { isWebRuntime } from "../db/runtime";
+import { getApiUserId } from "../sync/userId";
 import {
   buildAccountBalanceRows,
   normalizeAccountType,
@@ -13,10 +14,10 @@ import type { LocalTransaction } from "./queries";
 import { webSyncOrEnqueue } from "./webSyncWrite";
 
 // Avoid importing ../config (expo-constants) so vitest/node stays RN-free.
+
 const DEFAULT_API_URL =
   (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_API_URL) ||
   "https://copilot-clone-api.maurodaprotis.workers.dev";
-const DEFAULT_USER_ID = "demo-user";
 
 
 function toDomainTxn(row: LocalTransaction): Transaction {
@@ -88,7 +89,7 @@ async function fetchAccountsOverviewFromApi(options?: {
   fetchImpl?: typeof fetch;
 }): Promise<AccountsOverview | null> {
   const apiUrl = options?.apiUrl ?? DEFAULT_API_URL;
-  const userId = options?.userId ?? DEFAULT_USER_ID;
+  const userId = options?.userId ?? getApiUserId();
   const fetchImpl = options?.fetchImpl ?? fetch;
   try {
     const res = await fetchImpl(`${apiUrl.replace(/\/$/, "")}/accounts`, {
@@ -130,7 +131,7 @@ async function upsertAccountViaApi(
   },
 ): Promise<{ id: string; outboxId: string }> {
   const apiUrl = options?.apiUrl ?? DEFAULT_API_URL;
-  const userId = options?.userId ?? DEFAULT_USER_ID;
+  const userId = options?.userId ?? getApiUserId();
   const fetchImpl = options?.fetchImpl ?? fetch;
   const id = input.id ?? crypto.randomUUID();
   const now = new Date().toISOString();

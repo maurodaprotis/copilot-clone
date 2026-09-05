@@ -24,13 +24,14 @@ import { reviewTransaction } from "../../src/offline/reviewTransaction";
 import { syncOutbox } from "../../src/offline/syncOutbox";
 import { createApiTransport } from "../../src/sync/apiTransport";
 import { pullCategoriesFromApi } from "../../src/sync/pullCategories";
+import { pullAccountsFromApi } from "../../src/sync/pullAccounts";
 import { SpendingLineChart } from "../../src/components/SpendingLineChart";
 import { NetWorthTrendChart } from "../../src/components/NetWorthTrendChart";
 import {
   listUpcomingLocal,
   pullRecurringsFromApi,
 } from "../../src/offline/recurrings";
-import { API_URL, DEMO_USER_ID } from "../../src/config";
+import { API_URL, DEMO_USER_ID, getApiUserId } from "../../src/config";
 import { colors, radius, spacing, type } from "../../src/theme";
 import {
   Amount,
@@ -69,7 +70,7 @@ async function fetchSpendingLine(yearMonth: string): Promise<SpendLine> {
   try {
     const res = await fetch(
       `${API_URL.replace(/\/$/, "")}/dashboard/spending?month=${encodeURIComponent(yearMonth)}`,
-      { headers: { "x-user-id": DEMO_USER_ID } },
+      { headers: { "x-user-id": getApiUserId() } },
     );
     if (res.ok) {
       const json = (await res.json()) as SpendLine;
@@ -92,7 +93,7 @@ async function fetchTopCategoriesFromApi(
   try {
     const res = await fetch(
       `${API_URL.replace(/\/$/, "")}/categories?month=${encodeURIComponent(yearMonth)}`,
-      { headers: { "x-user-id": DEMO_USER_ID } },
+      { headers: { "x-user-id": getApiUserId() } },
     );
     if (!res.ok) return null;
     const data = (await res.json()) as { rows?: CategoryBudgetRow[] };
@@ -213,7 +214,10 @@ export default function DashboardScreen() {
     setStatus(null);
     try {
       const result = await syncOutbox(createApiTransport());
-      await pullCategoriesFromApi();
+      await Promise.all([
+        pullCategoriesFromApi().catch(() => false),
+        pullAccountsFromApi().catch(() => false),
+      ]);
       setStatus(
         result.pushed > 0
           ? `Synced ${result.pushed} item(s)`

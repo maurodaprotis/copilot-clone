@@ -2,7 +2,7 @@ import type {
   CsvColumnMapping, FxRate, FxSeries, ImportJob, UserSettings,
 } from "@copilot-clone/domain";
 import { defaultUserSettings, normalizeFxSeries } from "@copilot-clone/domain";
-import { API_URL, DEMO_USER_ID } from "../config";
+import { API_URL, getApiUserId } from "../config";
 import type { LocalDb } from "../db/types";
 
 async function dbOr(dbOverride?: LocalDb): Promise<LocalDb> {
@@ -11,7 +11,7 @@ async function dbOr(dbOverride?: LocalDb): Promise<LocalDb> {
 
 function base(): string { return API_URL.replace(/\/$/, ""); }
 function headers(): HeadersInit {
-  return { "content-type": "application/json", "x-user-id": DEMO_USER_ID };
+  return { "content-type": "application/json", "x-user-id": getApiUserId() };
 }
 
 export async function getSettingsLocal(dbOverride?: LocalDb): Promise<UserSettings> {

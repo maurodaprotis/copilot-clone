@@ -7,6 +7,8 @@ import { handleIncomingUrl } from "../src/lib/deepLink";
 import { syncOutbox } from "../src/offline/syncOutbox";
 import { ensureWebOutboxAutodrain } from "../src/offline/webOutbox";
 import { createApiTransport } from "../src/sync/apiTransport";
+import { prefetchWebApiData } from "../src/sync/prefetchWebData";
+import { getApiUserId } from "../src/sync/userId";
 import { colors, fontFamily } from "../src/theme";
 import { WebShell } from "../src/ui";
 
@@ -58,7 +60,14 @@ export default function RootLayout() {
       if (url) void handleIncomingUrl(url);
     });
 
+    // Ensure web identity is demo-user (or configured) before any GETs.
+    getApiUserId();
+
     void syncOutbox(createApiTransport()).catch(() => undefined);
+
+    // Web: warm categories/transactions/accounts/dashboard so tabs are populated
+    // without tapping Sync (Worker already has demo seed).
+    void prefetchWebApiData().catch(() => undefined);
 
     // Web: auto-drain localStorage outbox on online / focus (no manual Sync needed).
     ensureWebOutboxAutodrain(() => createApiTransport());

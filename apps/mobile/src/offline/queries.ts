@@ -1,6 +1,7 @@
 import { normalizeReviewStatus } from "@copilot-clone/domain";
 import { isWebRuntime } from "../db/runtime";
 import type { LocalDb } from "../db/types";
+import { getApiUserId } from "../sync/userId";
 
 export type LocalTransaction = {
   id: string;
@@ -22,10 +23,10 @@ export type LocalTransaction = {
 };
 
 // Avoid importing ../config (expo-constants) so vitest/node stays RN-free.
+
 const DEFAULT_API_URL =
   (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_API_URL) ||
   "https://copilot-clone-api.maurodaprotis.workers.dev";
-const DEFAULT_USER_ID = "demo-user";
 
 function normalizeTxn(row: LocalTransaction): LocalTransaction {
   return {
@@ -61,7 +62,7 @@ async function fetchTransactionsFromApi(options?: {
   fetchImpl?: typeof fetch;
 }): Promise<LocalTransaction[] | null> {
   const apiUrl = options?.apiUrl ?? DEFAULT_API_URL;
-  const userId = options?.userId ?? DEFAULT_USER_ID;
+  const userId = options?.userId ?? getApiUserId();
   const fetchImpl = options?.fetchImpl ?? fetch;
   try {
     const res = await fetchImpl(`${apiUrl.replace(/\/$/, "")}/transactions`, {
