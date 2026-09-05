@@ -10,8 +10,15 @@ import {
   type CategoryGroup,
   type Transaction,
 } from "@copilot-clone/domain";
+import { isWebRuntime } from "../db/runtime";
 import type { LocalDb } from "../db/types";
 import type { LocalTransaction } from "./queries";
+
+// Avoid importing ../config (expo-constants) so vitest/node stays RN-free.
+const DEFAULT_API_URL =
+  (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_API_URL) ||
+  "https://copilot-clone-api.maurodaprotis.workers.dev";
+const DEFAULT_USER_ID = "demo-user";
 
 function toDomainTxn(row: LocalTransaction): Transaction {
   return {
@@ -160,8 +167,66 @@ export async function getSpendingLine(
   };
 }
 
+async function setBudgetViaApi(
+  input: {
+    category_id: string;
+    year_month: string;
+    budgeted_amount: number;
+    rollover_mode?: string;
+    rollover_from_prior?: number;
+  },
+  options?: {
+    apiUrl?: string;
+    userId?: string;
+    fetchImpl?: typeof fetch;
+  },
+): Promise<{ outboxId: string }> {
+  const apiUrl = options?.apiUrl ?? DEFAULT_API_URL;
+  const userId = options?.userId ?? DEFAULT_USER_ID;
+  const fetchImpl = options?.fetchImpl ?? fetch;
+  const now = new Date().toISOString();
+  const mode = input.rollover_mode ?? "off";
+  const rollover = input.rollover_from_prior ?? 0;
+  const payload = {
+    op: "budget_upsert" as const,
+    category_id: input.category_id,
+    year_month: input.year_month,
+    budgeted_amount: input.budgeted_amount,
+    rollover_mode: mode,
+    rollover_from_prior: rollover,
+    updated_at: now,
+  };
+
+  const res = await fetchImpl(`${apiUrl.replace(/\/$/, "")}/sync`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-user-id": userId,
+    },
+    body: JSON.stringify({ items: [payload] }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `budget_upsert failed (${res.status})`);
+  }
+  const data = (await res.json()) as {
+    ok?: boolean;
+    error?: string;
+    message?: string;
+  };
+  if (!data.ok) {
+    throw new Error(data.message || data.error || "budget_upsert failed");
+  }
+  // Web has no SQLite outbox — sync already applied via Worker API.
+  return {
+    outboxId: `web-api:${input.category_id}:${input.year_month}`,
+  };
+}
+
 /**
- * Edit budget for a category/month locally and enqueue UserDO sync.
+ * Edit budget for a category/month.
+ * - Web / Pages: POST budget_upsert to Worker (never expo-sqlite).
+ * - Native: local SQLite + outbox enqueue.
  */
 export async function setBudgetAmount(
   input: {
@@ -173,6 +238,11 @@ export async function setBudgetAmount(
   },
   dbOverride?: LocalDb,
 ): Promise<{ outboxId: string }> {
+  // Pages / web: never touch expo-sqlite — push budget_upsert straight to Worker.
+  if (!dbOverride && isWebRuntime()) {
+    return setBudgetViaApi(input);
+  }
+
   const db = dbOverride ?? (await (await import("../db/client")).getDb());
   const now = new Date().toISOString();
   const outboxId = crypto.randomUUID();
@@ -229,6 +299,9 @@ export async function applyRemoteCategoriesSnapshot(
   },
   dbOverride?: LocalDb,
 ): Promise<void> {
+  // Web list/edit already use the Worker API; skip local mirror.
+  if (!dbOverride && isWebRuntime()) return;
+
   const db = dbOverride ?? (await (await import("../db/client")).getDb());
   await db.withTransactionAsync(async () => {
     for (const g of snapshot.groups) {
@@ -272,3 +345,9 @@ export async function applyRemoteCategoriesSnapshot(
     }
   });
 }
+
+/** Test/helper export: direct API upsert (used by smoke tests). */
+export const __test = {
+  setBudgetViaApi,
+};
+

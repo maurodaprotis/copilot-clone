@@ -8,7 +8,7 @@ export type SyncTransport = (items: unknown[]) => Promise<{ ok: boolean; saved?:
  * Does NOT change review_status — needs_review stays in To Review until reviewed.
  *
  * Web / Pages: getDb() returns in-memory LocalDb (never expo-sqlite). Account
- * create on web bypasses outbox and posts account_upsert to the Worker directly.
+ * create and budget edit on web bypass outbox and POST *_upsert to the Worker.
  */
 export async function syncOutbox(
   transport: SyncTransport,
