@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
   wrap: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: spacing.xxl,
+    paddingVertical: spacing.lg,
     paddingHorizontal: spacing.lg,
   },
   iconBubble: {

@@ -7,6 +7,7 @@ import { handleIncomingUrl } from "../src/lib/deepLink";
 import { syncOutbox } from "../src/offline/syncOutbox";
 import { createApiTransport } from "../src/sync/apiTransport";
 import { colors, fontFamily } from "../src/theme";
+import { WebShell } from "../src/ui";
 
 const headerOpts = {
   headerStyle: {
@@ -31,7 +32,6 @@ export default function RootLayout() {
       document.body.style.fontFamily =
         fontFamily ??
         "Inter, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
-      // Load Inter on web when available
       const id = "copilot-inter-font";
       if (!document.getElementById(id)) {
         const link = document.createElement("link");
@@ -65,23 +65,26 @@ export default function RootLayout() {
   return (
     <>
       <StatusBar style="dark" />
-      <Stack screenOptions={headerOpts}>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="accounts" options={{ title: "Accounts" }} />
-        <Stack.Screen
-          name="settings"
-          options={{
-            title: "Settings",
-            presentation: "transparentModal",
-            animation: "fade",
-            contentStyle: { backgroundColor: "transparent" },
-          }}
-        />
-        <Stack.Screen name="import" options={{ title: "Import" }} />
-        <Stack.Screen name="rules" options={{ title: "Name Rules" }} />
-        <Stack.Screen name="tags" options={{ title: "Tags" }} />
-        <Stack.Screen name="recurrings" options={{ title: "Recurrings" }} />
-      </Stack>
+      <WebShell>
+        <Stack screenOptions={headerOpts}>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="accounts" options={{ title: "Accounts" }} />
+          <Stack.Screen
+            name="settings"
+            options={{
+              title: "Settings",
+              presentation: "transparentModal",
+              animation: "fade",
+              contentStyle: { backgroundColor: "transparent" },
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen name="import" options={{ title: "Import" }} />
+          <Stack.Screen name="rules" options={{ title: "Name Rules" }} />
+          <Stack.Screen name="tags" options={{ title: "Tags" }} />
+          <Stack.Screen name="recurrings" options={{ title: "Recurrings" }} />
+        </Stack>
+      </WebShell>
     </>
   );
 }
