@@ -244,7 +244,7 @@ export default function DashboardScreen() {
               )
         }
         width={300}
-        height={110}
+        height={96}
       />
       {over > 0 ? (
         <View style={styles.callout}>
@@ -435,7 +435,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   reviewBtn: { minWidth: 84, minHeight: 36, paddingVertical: 8 },
-  emptyHint: { ...type.subhead, textAlign: "center", paddingVertical: spacing.xs },
+  emptyHint: { ...type.footnote, textAlign: "center", paddingVertical: 2, color: colors.textSecondary },
   nwRow: { flexDirection: "row", gap: spacing.lg, marginBottom: spacing.xs },
   nwCol: { flex: 1 },
   dotRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
@@ -446,10 +446,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    paddingVertical: 6,
+    paddingVertical: 4,
+    minHeight: 36,
   },
   catEmoji: { fontSize: 16, width: 24, textAlign: "center" },
-  catMid: { flex: 1, minWidth: 0, gap: 4 },
+  catMid: { flex: 1, minWidth: 0, gap: 3 },
   catName: { ...type.headline },
   catAmt: { ...type.amountList },
   upcoming: { marginTop: spacing.cardGap },

@@ -58,7 +58,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
   },
   title: { ...type.headline },
   action: { ...type.footnote, color: colors.textSecondary, fontWeight: "600" },
