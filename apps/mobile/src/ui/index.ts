@@ -19,5 +19,7 @@ export { SettingsGroup, SettingsDivider } from "./SettingsGroup";
 export { ChartSpendLine } from "./ChartSpendLine";
 export { WebSidebar } from "./WebSidebar";
 export { MasterDetail } from "./MasterDetail";
-export { DashboardGrid } from "./DashboardGrid";
+export { DashboardGrid, DashboardGridItem } from "./DashboardGrid";
+export { SettingsSheet } from "./SettingsSheet";
+export type { SettingsNavId } from "./SettingsSheet";
 export { useIsDesktopWeb } from "./useIsDesktopWeb";
