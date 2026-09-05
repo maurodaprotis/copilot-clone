@@ -111,3 +111,29 @@ export function computeCashFlowWithPrior(input: {
     net_delta_pct,
   };
 }
+
+export type CashFlowSeriesPoint = CashFlowSummary;
+
+/** Last `months` calendar months ending at year_month (inclusive), oldest → newest. */
+export function cashFlowSeries(input: {
+  transactions: Transaction[];
+  year_month: string;
+  months?: number;
+  reporting_currency?: string;
+  include_excluded?: boolean;
+}): CashFlowSeriesPoint[] {
+  const n = Math.max(1, Math.min(input.months ?? 6, 24));
+  const out: CashFlowSeriesPoint[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const ym = shiftYearMonth(input.year_month, -i);
+    out.push(
+      computeCashFlow({
+        transactions: input.transactions,
+        year_month: ym,
+        reporting_currency: input.reporting_currency,
+        include_excluded: input.include_excluded,
+      }),
+    );
+  }
+  return out;
+}

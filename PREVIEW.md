@@ -12,6 +12,13 @@ Web build is a static Expo Router export (`apps/mobile`) deployed with `wrangler
 
 - **expo-sqlite in the browser:** static export succeeds, but there is **no `.wasm` shipped** in this build. Local SQLite / offline-first writes may fail or no-op in some browsers; prefer Sync against the Worker API for durable data.
 - Screens that call the API (settings, FX, import, cash-flow, sync) work over HTTPS + CORS `*`.
+
+### Categories / Cash Flow on Pages (demo seed)
+
+- **Categories** reads `GET /categories?month=` for the demo user (`x-user-id: demo-user`) and renders groups + progress bars from the API payload (avoids broken expo-sqlite/wasm on static Pages). Local SQLite mirror is best-effort.
+- **Cash Flow** reads `GET /cash-flow?month=` (Income / Spend / Net + `series` for the bar chart).
+- Empty Durable Objects auto-seed Copilot-like demo categories/budgets **and** a demo ledger (only when transaction count is 0 — never overwrites real synced data).
+
 - SPA routes are pre-rendered HTML (`/settings`, `/transactions`, etc.) and return 200 on Pages.
 
 Redeploy web:

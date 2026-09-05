@@ -8,8 +8,9 @@ import {
   View,
 } from "react-native";
 import { useFocusEffect } from "expo-router";
-import type { CategoryBudgetRow } from "@copilot-clone/domain";
+import type { CategoryBudgetRow, CategoryGroup } from "@copilot-clone/domain";
 import { currentYearMonth } from "@copilot-clone/domain";
+import { API_URL, DEMO_USER_ID } from "../../src/config";
 import {
   getCategoryBudgetOverview,
   setBudgetAmount,
@@ -38,6 +39,35 @@ function BudgetBar({ spent, budget }: { spent: number; budget: number }) {
   return <ProgressBar progress={pct} color={color} height={4} />;
 }
 
+type Overview = {
+  groups: CategoryGroup[];
+  rows: CategoryBudgetRow[];
+  totals: { budgeted: number; spent: number; remaining: number };
+};
+
+async function fetchCategoriesOverview(yearMonth: string): Promise<Overview | null> {
+  try {
+    const res = await fetch(
+      `${API_URL.replace(/\/$/, "")}/categories?month=${encodeURIComponent(yearMonth)}`,
+      { headers: { "x-user-id": DEMO_USER_ID } },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      groups?: CategoryGroup[];
+      rows?: CategoryBudgetRow[];
+      totals?: Overview["totals"];
+    };
+    if (!data.groups || !data.rows || !data.totals) return null;
+    return {
+      groups: data.groups,
+      rows: data.rows,
+      totals: data.totals,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function CategoriesScreen() {
   const yearMonth = currentYearMonth();
   const [groups, setGroups] = useState<
@@ -49,25 +79,51 @@ export default function CategoriesScreen() {
   const [editAmount, setEditAmount] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [source, setSource] = useState<"api" | "local">("local");
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    try {
-      await pullCategoriesFromApi({ month: yearMonth }).catch(() => false);
-      const overview = await getCategoryBudgetOverview(yearMonth);
-      const byGroup = overview.groups.map((g) => ({
+  const applyOverview = useCallback((overview: Overview) => {
+    const byGroup = overview.groups
+      .slice()
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((g) => ({
         id: g.id,
         name: g.name,
         rows: overview.rows
           .filter((r) => r.group_id === g.id)
           .sort((a, b) => a.category.sort_order - b.category.sort_order),
       }));
-      setGroups(byGroup);
-      setTotals(overview.totals);
+    setGroups(byGroup);
+    setTotals(overview.totals);
+  }, []);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      // Prefer API rows for Pages (expo-sqlite/wasm is weak) — same demo user as sync.
+      const remote = await fetchCategoriesOverview(yearMonth);
+      if (remote && remote.rows.length > 0) {
+        applyOverview(remote);
+        setSource("api");
+        // Best-effort local mirror for native / later offline — ignore web SQLite failures.
+        await pullCategoriesFromApi({ month: yearMonth }).catch(() => false);
+        return;
+      }
+
+      await pullCategoriesFromApi({ month: yearMonth }).catch(() => false);
+      const overview = await getCategoryBudgetOverview(yearMonth);
+      applyOverview({
+        groups: overview.groups,
+        rows: overview.rows,
+        totals: overview.totals,
+      });
+      setSource("local");
+    } catch {
+      setGroups([]);
+      setTotals({ budgeted: 0, spent: 0, remaining: 0 });
     } finally {
       setLoading(false);
     }
-  }, [yearMonth]);
+  }, [yearMonth, applyOverview]);
 
   useFocusEffect(
     useCallback(() => {
@@ -105,7 +161,10 @@ export default function CategoriesScreen() {
 
   return (
     <Screen refreshing={loading} onRefresh={() => void reload()}>
-      <ScreenHeader title="Categories" subtitle={`${yearMonth} · USD budgets`} />
+      <ScreenHeader
+        title="Categories"
+        subtitle={`${yearMonth} · USD budgets · ${source === "api" ? "Live" : "Local"}`}
+      />
 
       <Card style={styles.summary}>
         <View style={styles.summaryCell}>

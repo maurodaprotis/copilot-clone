@@ -1,4 +1,5 @@
 import type { BudgetMonth, Category, CategoryGroup } from "./types.js";
+import { priorYearMonth, shiftYearMonth } from "./cashflow.js";
 
 /** Copilot-like seed taxonomy (en); IDs stable for demo sync. */
 export const SEED_CATEGORY_GROUPS: CategoryGroup[] = [
@@ -149,4 +150,233 @@ export function currentYearMonth(now = new Date()): string {
   const y = now.getUTCFullYear();
   const m = String(now.getUTCMonth() + 1).padStart(2, "0");
   return `${y}-${m}`;
+}
+
+export type DemoTxnSeed = {
+  id: string;
+  account_id: string;
+  category_id: string | null;
+  amount: number;
+  currency: string;
+  amount_account: number;
+  amount_reporting: number;
+  type: "regular" | "income" | "transfer";
+  is_refund: number;
+  review_status: "reviewed" | "needs_review" | "excluded";
+  posted_at: string;
+  name: string;
+  note: string | null;
+  fingerprint: string;
+};
+
+/**
+ * Copilot-like demo ledger for web preview (Pages).
+ * USD reporting amounts; stable IDs so re-seed is idempotent via INSERT OR IGNORE.
+ */
+export function seedDemoTransactions(opts?: {
+  accountId?: string;
+  yearMonth?: string;
+}): DemoTxnSeed[] {
+  const accountId = opts?.accountId ?? "acc-cash-ars";
+  const ym = opts?.yearMonth ?? currentYearMonth();
+  const prior = priorYearMonth(ym);
+  const prior2 = shiftYearMonth(ym, -2);
+
+  const mk = (
+    id: string,
+    partial: {
+      category_id: string | null;
+      amount_reporting: number;
+      type: "regular" | "income" | "transfer";
+      posted_at: string;
+      name: string;
+      is_refund?: number;
+      review_status?: DemoTxnSeed["review_status"];
+    },
+  ): DemoTxnSeed => ({
+    id,
+    account_id: accountId,
+    category_id: partial.category_id,
+    amount: partial.amount_reporting,
+    currency: "USD",
+    amount_account: partial.amount_reporting,
+    amount_reporting: partial.amount_reporting,
+    type: partial.type,
+    is_refund: partial.is_refund ?? 0,
+    review_status: partial.review_status ?? "reviewed",
+    posted_at: partial.posted_at,
+    name: partial.name,
+    note: null,
+    fingerprint: `demo:${id}`,
+  });
+
+  const day = (month: string, d: number) =>
+    `${month}-${String(d).padStart(2, "0")}T12:00:00.000Z`;
+
+  return [
+    // Current month — income + spend across categories
+    mk("demo-txn-pay-cur", {
+      category_id: null,
+      amount_reporting: 5200,
+      type: "income",
+      posted_at: day(ym, 1),
+      name: "Paycheck",
+    }),
+    mk("demo-txn-groc-1", {
+      category_id: "cat-groceries",
+      amount_reporting: 186,
+      type: "regular",
+      posted_at: day(ym, 3),
+      name: "Whole Foods",
+    }),
+    mk("demo-txn-groc-2", {
+      category_id: "cat-groceries",
+      amount_reporting: 94,
+      type: "regular",
+      posted_at: day(ym, 12),
+      name: "Trader Joe's",
+    }),
+    mk("demo-txn-dine-1", {
+      category_id: "cat-dining",
+      amount_reporting: 68,
+      type: "regular",
+      posted_at: day(ym, 5),
+      name: "Café Palermo",
+    }),
+    mk("demo-txn-dine-2", {
+      category_id: "cat-dining",
+      amount_reporting: 42,
+      type: "regular",
+      posted_at: day(ym, 18),
+      name: "Dinner out",
+    }),
+    mk("demo-txn-trans-1", {
+      category_id: "cat-transport",
+      amount_reporting: 55,
+      type: "regular",
+      posted_at: day(ym, 7),
+      name: "Uber",
+    }),
+    mk("demo-txn-shop-1", {
+      category_id: "cat-shopping",
+      amount_reporting: 120,
+      type: "regular",
+      posted_at: day(ym, 9),
+      name: "Fake Hardware",
+    }),
+    mk("demo-txn-ent-1", {
+      category_id: "cat-entertainment",
+      amount_reporting: 45,
+      type: "regular",
+      posted_at: day(ym, 10),
+      name: "Netflix",
+    }),
+    mk("demo-txn-health-1", {
+      category_id: "cat-health",
+      amount_reporting: 32,
+      type: "regular",
+      posted_at: day(ym, 14),
+      name: "Pharmacy",
+    }),
+    mk("demo-txn-house-1", {
+      category_id: "cat-housing",
+      amount_reporting: 1200,
+      type: "regular",
+      posted_at: day(ym, 2),
+      name: "Rent",
+    }),
+    mk("demo-txn-util-1", {
+      category_id: "cat-utilities",
+      amount_reporting: 98,
+      type: "regular",
+      posted_at: day(ym, 8),
+      name: "Electric",
+    }),
+    // Prior month
+    mk("demo-txn-pay-prior", {
+      category_id: null,
+      amount_reporting: 5100,
+      type: "income",
+      posted_at: day(prior, 1),
+      name: "Paycheck",
+    }),
+    mk("demo-txn-groc-p1", {
+      category_id: "cat-groceries",
+      amount_reporting: 210,
+      type: "regular",
+      posted_at: day(prior, 6),
+      name: "Whole Foods",
+    }),
+    mk("demo-txn-dine-p1", {
+      category_id: "cat-dining",
+      amount_reporting: 88,
+      type: "regular",
+      posted_at: day(prior, 11),
+      name: "Restaurants",
+    }),
+    mk("demo-txn-house-p1", {
+      category_id: "cat-housing",
+      amount_reporting: 1200,
+      type: "regular",
+      posted_at: day(prior, 2),
+      name: "Rent",
+    }),
+    mk("demo-txn-util-p1", {
+      category_id: "cat-utilities",
+      amount_reporting: 110,
+      type: "regular",
+      posted_at: day(prior, 9),
+      name: "Electric",
+    }),
+    mk("demo-txn-ent-p1", {
+      category_id: "cat-entertainment",
+      amount_reporting: 60,
+      type: "regular",
+      posted_at: day(prior, 15),
+      name: "Concert",
+    }),
+    mk("demo-txn-shop-p1", {
+      category_id: "cat-shopping",
+      amount_reporting: 75,
+      type: "regular",
+      posted_at: day(prior, 20),
+      name: "Amazon",
+    }),
+    // Two months ago (for chart density)
+    mk("demo-txn-pay-p2", {
+      category_id: null,
+      amount_reporting: 5000,
+      type: "income",
+      posted_at: day(prior2, 1),
+      name: "Paycheck",
+    }),
+    mk("demo-txn-spend-p2a", {
+      category_id: "cat-groceries",
+      amount_reporting: 240,
+      type: "regular",
+      posted_at: day(prior2, 8),
+      name: "Groceries",
+    }),
+    mk("demo-txn-spend-p2b", {
+      category_id: "cat-housing",
+      amount_reporting: 1200,
+      type: "regular",
+      posted_at: day(prior2, 2),
+      name: "Rent",
+    }),
+    mk("demo-txn-spend-p2c", {
+      category_id: "cat-dining",
+      amount_reporting: 150,
+      type: "regular",
+      posted_at: day(prior2, 16),
+      name: "Dining",
+    }),
+    mk("demo-txn-spend-p2d", {
+      category_id: "cat-utilities",
+      amount_reporting: 105,
+      type: "regular",
+      posted_at: day(prior2, 10),
+      name: "Utilities",
+    }),
+  ];
 }
