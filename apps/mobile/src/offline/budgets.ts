@@ -13,12 +13,7 @@ import {
 import { isWebRuntime } from "../db/runtime";
 import type { LocalDb } from "../db/types";
 import type { LocalTransaction } from "./queries";
-
-// Avoid importing ../config (expo-constants) so vitest/node stays RN-free.
-const DEFAULT_API_URL =
-  (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_API_URL) ||
-  "https://copilot-clone-api.maurodaprotis.workers.dev";
-const DEFAULT_USER_ID = "demo-user";
+import { webSyncOrEnqueue } from "./webSyncWrite";
 
 function toDomainTxn(row: LocalTransaction): Transaction {
   return {
@@ -180,13 +175,11 @@ async function setBudgetViaApi(
     userId?: string;
     fetchImpl?: typeof fetch;
   },
-): Promise<{ outboxId: string }> {
-  const apiUrl = options?.apiUrl ?? DEFAULT_API_URL;
-  const userId = options?.userId ?? DEFAULT_USER_ID;
-  const fetchImpl = options?.fetchImpl ?? fetch;
+): Promise<{ outboxId: string; queued?: boolean }> {
   const now = new Date().toISOString();
   const mode = input.rollover_mode ?? "off";
   const rollover = input.rollover_from_prior ?? 0;
+  const entityId = `${input.category_id}:${input.year_month}`;
   const payload = {
     op: "budget_upsert" as const,
     category_id: input.category_id,
@@ -197,35 +190,20 @@ async function setBudgetViaApi(
     updated_at: now,
   };
 
-  const res = await fetchImpl(`${apiUrl.replace(/\/$/, "")}/sync`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-user-id": userId,
-    },
-    body: JSON.stringify({ items: [payload] }),
+  // Try Worker first; on network fail queue localStorage web outbox (never sqlite).
+  return webSyncOrEnqueue({
+    payload,
+    entity_type: "budget",
+    entity_id: entityId,
+    apiUrl: options?.apiUrl,
+    userId: options?.userId,
+    fetchImpl: options?.fetchImpl,
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `budget_upsert failed (${res.status})`);
-  }
-  const data = (await res.json()) as {
-    ok?: boolean;
-    error?: string;
-    message?: string;
-  };
-  if (!data.ok) {
-    throw new Error(data.message || data.error || "budget_upsert failed");
-  }
-  // Web has no SQLite outbox — sync already applied via Worker API.
-  return {
-    outboxId: `web-api:${input.category_id}:${input.year_month}`,
-  };
 }
 
 /**
  * Edit budget for a category/month.
- * - Web / Pages: POST budget_upsert to Worker (never expo-sqlite).
+ * - Web / Pages: POST budget_upsert to Worker; on fail queue web outbox (never expo-sqlite).
  * - Native: local SQLite + outbox enqueue.
  */
 export async function setBudgetAmount(

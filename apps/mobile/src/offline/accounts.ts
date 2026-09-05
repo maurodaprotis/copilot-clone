@@ -10,6 +10,7 @@ import {
 } from "@copilot-clone/domain";
 import type { LocalDb } from "../db/types";
 import type { LocalTransaction } from "./queries";
+import { webSyncOrEnqueue } from "./webSyncWrite";
 
 // Avoid importing ../config (expo-constants) so vitest/node stays RN-free.
 const DEFAULT_API_URL =
@@ -148,26 +149,15 @@ async function upsertAccountViaApi(
     updated_at: now,
   };
 
-  const res = await fetchImpl(`${apiUrl.replace(/\/$/, "")}/sync`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-user-id": userId,
-    },
-    body: JSON.stringify({ items: [payload] }),
+  const result = await webSyncOrEnqueue({
+    payload,
+    entity_type: "account",
+    entity_id: id,
+    apiUrl,
+    userId,
+    fetchImpl,
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      text || `account_upsert failed (${res.status})`,
-    );
-  }
-  const data = (await res.json()) as { ok?: boolean; error?: string; message?: string };
-  if (!data.ok) {
-    throw new Error(data.message || data.error || "account_upsert failed");
-  }
-  // Web has no SQLite outbox — sync already applied via Worker API.
-  return { id, outboxId: `web-api:${id}` };
+  return { id, outboxId: result.outboxId };
 }
 
 export async function listLocalAccounts(
