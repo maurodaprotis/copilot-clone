@@ -18,6 +18,7 @@ export { ProgressBar } from "./ProgressBar";
 export { SettingsGroup, SettingsDivider } from "./SettingsGroup";
 export { ChartSpendLine } from "./ChartSpendLine";
 export { WebSidebar } from "./WebSidebar";
+export { WebShell } from "./WebShell";
 export { MasterDetail } from "./MasterDetail";
 export { DashboardGrid, DashboardGridItem } from "./DashboardGrid";
 export { SettingsSheet } from "./SettingsSheet";

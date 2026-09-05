@@ -1,6 +1,5 @@
 import { useCallback, useState } from "react";
 import {
-  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
@@ -8,7 +7,11 @@ import {
 } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import type { CategoryBudgetRow, Recurring } from "@copilot-clone/domain";
-import { currentYearMonth, isLiabilityAccount } from "@copilot-clone/domain";
+import {
+  currentYearMonth,
+  daysInYearMonth,
+  isLiabilityAccount,
+} from "@copilot-clone/domain";
 import {
   listToReview,
   type LocalTransaction,
@@ -27,6 +30,7 @@ import {
   listUpcomingLocal,
   pullRecurringsFromApi,
 } from "../../src/offline/recurrings";
+import { API_URL, DEMO_USER_ID } from "../../src/config";
 import { colors, radius, spacing, type } from "../../src/theme";
 import {
   Amount,
@@ -41,6 +45,45 @@ import {
   SegmentedControl,
   TxnRow,
 } from "../../src/ui";
+
+type SpendLine = {
+  year_month: string;
+  total_budget: number;
+  cumulative_spend: number[];
+  budget_pace: number[];
+  spent_mtd: number;
+};
+
+function emptySpend(yearMonth = currentYearMonth()): SpendLine {
+  const days = daysInYearMonth(yearMonth);
+  return {
+    year_month: yearMonth,
+    total_budget: 0,
+    cumulative_spend: Array.from({ length: days }, () => 0),
+    budget_pace: Array.from({ length: days }, () => 0),
+    spent_mtd: 0,
+  };
+}
+
+async function fetchSpendingLine(yearMonth: string): Promise<SpendLine> {
+  try {
+    const res = await fetch(
+      `${API_URL.replace(/\/$/, "")}/dashboard/spending?month=${encodeURIComponent(yearMonth)}`,
+      { headers: { "x-user-id": DEMO_USER_ID } },
+    );
+    if (res.ok) {
+      const json = (await res.json()) as SpendLine;
+      if (json && Array.isArray(json.cumulative_spend)) return json;
+    }
+  } catch {
+    // fall through
+  }
+  try {
+    return await getSpendingLine(yearMonth);
+  } catch {
+    return emptySpend(yearMonth);
+  }
+}
 
 function formatMoney(amount: number, currency: string): string {
   try {
@@ -65,13 +108,7 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
-  const [spend, setSpend] = useState<{
-    year_month: string;
-    total_budget: number;
-    cumulative_spend: number[];
-    budget_pace: number[];
-    spent_mtd: number;
-  } | null>(null);
+  const [spend, setSpend] = useState<SpendLine | null>(null);
   const [upcoming, setUpcoming] = useState<Recurring[]>([]);
   const [assets, setAssets] = useState(0);
   const [debts, setDebts] = useState(0);
@@ -80,16 +117,23 @@ export default function DashboardScreen() {
 
   const reload = useCallback(async () => {
     setLoading(true);
+    const ym = currentYearMonth();
     try {
       await pullCategoriesFromApi().catch(() => false);
-      const [rows, line, accounts, overview] = await Promise.all([
-        listToReview(),
-        getSpendingLine(),
-        getAccountsOverview().catch(() => null),
-        getCategoryBudgetOverview(currentYearMonth()).catch(() => null),
+
+      const spendP = fetchSpendingLine(ym);
+      const reviewP = listToReview().catch(() => [] as LocalTransaction[]);
+      const accountsP = getAccountsOverview().catch(() => null);
+      const overviewP = getCategoryBudgetOverview(ym).catch(() => null);
+
+      const [line, rows, accounts, overview] = await Promise.all([
+        spendP,
+        reviewP,
+        accountsP,
+        overviewP,
       ]);
-      setItems(rows);
       setSpend(line);
+      setItems(rows);
       if (accounts) {
         let a = 0;
         let d = 0;
@@ -113,8 +157,10 @@ export default function DashboardScreen() {
         const pulled = await pullRecurringsFromApi(14);
         setUpcoming(pulled.upcoming);
       } catch {
-        setUpcoming(await listUpcomingLocal(14));
+        setUpcoming(await listUpcomingLocal(14).catch(() => []));
       }
+    } catch {
+      setSpend((prev) => prev ?? emptySpend(ym));
     } finally {
       setLoading(false);
     }
@@ -155,15 +201,18 @@ export default function DashboardScreen() {
     }
   }
 
-  const over = spend != null ? spend.spent_mtd - spend.total_budget : 0;
+  const spendSafe = spend ?? emptySpend();
+  const over = spendSafe.spent_mtd - spendSafe.total_budget;
   const overLabel =
-    spend == null
+    spend == null && loading
       ? "…"
       : over > 0
         ? `$${over.toFixed(0)} over`
         : over < 0
           ? `$${Math.abs(over).toFixed(0)} under`
-          : "On budget";
+          : spendSafe.total_budget === 0 && spendSafe.spent_mtd === 0
+            ? "$0"
+            : "On budget";
 
   const spendCard = (
     <Card
@@ -180,19 +229,23 @@ export default function DashboardScreen() {
           style={{ textAlign: "center" }}
         />
         <Text style={styles.spendMeta}>
-          ${spend?.total_budget.toFixed(0) ?? "0"} budgeted
+          ${spendSafe.total_budget.toFixed(0)} budgeted
         </Text>
       </View>
-      {spend ? (
-        <SpendingLineChart
-          cumulative={spend.cumulative_spend}
-          pace={spend.budget_pace}
-          width={300}
-          height={120}
-        />
-      ) : (
-        <ActivityIndicator color={colors.accentBlue} style={{ marginTop: 16 }} />
-      )}
+      <SpendingLineChart
+        cumulative={spendSafe.cumulative_spend}
+        pace={
+          spendSafe.budget_pace.length
+            ? spendSafe.budget_pace
+            : spendSafe.cumulative_spend.map((_, i, arr) =>
+                arr.length <= 1
+                  ? spendSafe.total_budget
+                  : (spendSafe.total_budget * i) / (arr.length - 1),
+              )
+        }
+        width={300}
+        height={110}
+      />
       {over > 0 ? (
         <View style={styles.callout}>
           <Text style={styles.calloutText}>${over.toFixed(0)} over</Text>
@@ -242,8 +295,8 @@ export default function DashboardScreen() {
     >
       {items.length === 0 && !loading ? (
         <EmptySparkle
-          title="You’re all caught up"
-          body="0 transactions to unlock intelligence. Add an expense or import a CSV."
+          title="You're all caught up"
+          body="No transactions to unlock intelligence."
           ctaLabel="Add transaction"
           onCta={() => router.push("/transactions")}
           secondary={
@@ -382,7 +435,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   reviewBtn: { minWidth: 84, minHeight: 36, paddingVertical: 8 },
-  emptyHint: { ...type.subhead, textAlign: "center", paddingVertical: spacing.sm },
+  emptyHint: { ...type.subhead, textAlign: "center", paddingVertical: spacing.xs },
   nwRow: { flexDirection: "row", gap: spacing.lg, marginBottom: spacing.xs },
   nwCol: { flex: 1 },
   dotRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
@@ -393,7 +446,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    paddingVertical: 8,
+    paddingVertical: 6,
   },
   catEmoji: { fontSize: 16, width: 24, textAlign: "center" },
   catMid: { flex: 1, minWidth: 0, gap: 4 },

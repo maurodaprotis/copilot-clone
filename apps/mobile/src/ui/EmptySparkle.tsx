@@ -35,7 +35,7 @@ export function EmptySparkle({
           label={ctaLabel}
           variant="accent"
           onPress={onCta}
-          style={{ marginTop: spacing.xl, alignSelf: "stretch" }}
+          style={{ marginTop: spacing.md, alignSelf: "stretch" }}
         />
       ) : null}
       {secondary ? <View style={styles.secondary}>{secondary}</View> : null}
@@ -47,21 +47,21 @@ const styles = StyleSheet.create({
   wrap: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: spacing.xxxl,
-    paddingHorizontal: spacing.xxl,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
   },
   halo: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     backgroundColor: "#EEF5FF",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: spacing.xxl,
+    marginBottom: spacing.md,
     position: "relative",
   },
   sparkle: {
-    fontSize: 42,
+    fontSize: 36,
     color: colors.accentBlue,
     fontWeight: "700",
   },

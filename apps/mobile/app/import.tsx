@@ -19,6 +19,7 @@ import {
   PrimaryButton,
   Screen,
   ScreenHeader,
+  useIsDesktopWeb,
 } from "../src/ui";
 
 const SAMPLE = `date,description,amount
@@ -30,6 +31,7 @@ type Step = 1 | 2 | 3 | 4;
 
 export default function ImportScreen() {
   const router = useRouter();
+  const desktop = useIsDesktopWeb();
   const [csv, setCsv] = useState(SAMPLE);
   const [accountId, setAccountId] = useState(DEMO_ACCOUNT_ID);
   const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
@@ -154,7 +156,7 @@ export default function ImportScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Import" }} />
+      <Stack.Screen options={{ title: "Import", headerShown: !desktop }} />
       <Screen>
         <ScreenHeader
           title="Import CSV"
