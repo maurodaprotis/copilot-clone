@@ -210,13 +210,26 @@ export class UserDO extends DurableObject<Env> {
    * Only inserts when there are zero live transactions — never clobbers real sync data.
    */
   private seedDemoTxnsIfEmpty(): void {
-    const rows = [
+    // Skip if demo ledger already present.
+    const demoRows = [
       ...this.ctx.storage.sql.exec(
-        `SELECT COUNT(*) AS c FROM transactions WHERE deleted_at IS NULL`,
+        `SELECT COUNT(*) AS c FROM transactions
+         WHERE deleted_at IS NULL AND fingerprint LIKE 'demo:%'`,
       ),
     ];
-    const count = Number(rows[0]?.c ?? 0);
-    if (count > 0) return;
+    if (Number(demoRows[0]?.c ?? 0) > 0) return;
+
+    // Skip if the user already has real reviewed cash-flow activity.
+    // Smoke/needs_review stubs (e.g. txn-demo-1) must NOT block Pages preview seed.
+    const reviewed = [
+      ...this.ctx.storage.sql.exec(
+        `SELECT COUNT(*) AS c FROM transactions
+         WHERE deleted_at IS NULL
+           AND review_status = 'reviewed'
+           AND type IN ('regular', 'income')`,
+      ),
+    ];
+    if (Number(reviewed[0]?.c ?? 0) > 0) return;
 
     const now = new Date().toISOString();
     for (const t of seedDemoTransactions()) {

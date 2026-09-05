@@ -17,7 +17,7 @@ Web build is a static Expo Router export (`apps/mobile`) deployed with `wrangler
 
 - **Categories** reads `GET /categories?month=` for the demo user (`x-user-id: demo-user`) and renders groups + progress bars from the API payload (avoids broken expo-sqlite/wasm on static Pages). Local SQLite mirror is best-effort.
 - **Cash Flow** reads `GET /cash-flow?month=` (Income / Spend / Net + `series` for the bar chart).
-- Empty Durable Objects auto-seed Copilot-like demo categories/budgets **and** a demo ledger (only when transaction count is 0 — never overwrites real synced data).
+- Empty Durable Objects auto-seed Copilot-like demo categories/budgets **and** a demo ledger when no `demo:*` fingerprints exist and there is no reviewed income/spend yet (smoke `needs_review` stubs do not block seed; never clobbers real reviewed sync data).
 
 - SPA routes are pre-rendered HTML (`/settings`, `/transactions`, etc.) and return 200 on Pages.
 
