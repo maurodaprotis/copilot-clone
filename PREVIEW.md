@@ -16,6 +16,7 @@ Web build is a static Expo Router export (`apps/mobile`) deployed with `wrangler
 ### Categories / Cash Flow on Pages (demo seed)
 
 - **Categories** reads `GET /categories?month=` for the demo user (`x-user-id: demo-user`) and renders groups + progress bars from the API payload (avoids broken expo-sqlite/wasm on static Pages). Local SQLite mirror is best-effort.
+- **Categories → edit budget** on web POSTs `budget_upsert` via `POST /sync` with `x-user-id` (same pattern as Accounts). Native keeps SQLite + outbox. No `category_upsert` in the Worker yet — create/rename UI not wired on web.
 - **Dashboard → Top categories** uses the same `GET /categories?month=` payload (top spent by `spent`, with bars/amounts); falls back to local SQLite when the API is empty/unavailable.
 - **Cash Flow** reads `GET /cash-flow?month=` (Income / Spend / Net + `series` for the bar chart).
 - Empty Durable Objects auto-seed Copilot-like demo categories/budgets **and** a demo ledger when no `demo:*` fingerprints exist and there is no reviewed income/spend yet (smoke `needs_review` stubs do not block seed; never clobbers real reviewed sync data).

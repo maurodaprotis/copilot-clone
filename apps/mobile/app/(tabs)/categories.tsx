@@ -146,7 +146,8 @@ export default function CategoriesScreen() {
         year_month: yearMonth,
         budgeted_amount: n,
       });
-      await syncOutbox(createApiTransport());
+      // Web already POSTed budget_upsert; native drains outbox. Soft-fail on web memory db.
+      await syncOutbox(createApiTransport()).catch(() => ({ pushed: 0 }));
       setEditRow(null);
       await reload();
       setMsg(`Saved ${editRow.category.name} · ${usd(n)}`);
