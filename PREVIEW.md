@@ -10,13 +10,15 @@ Web build is a static Expo Router export (`apps/mobile`) deployed with `wrangler
 
 ### Web limitations (Paul)
 
-- **expo-sqlite in the browser:** static export succeeds, but there is **no `.wasm` shipped** in this build. Local SQLite / offline-first writes may fail or no-op in some browsers; prefer Sync against the Worker API for durable data.
+- **expo-sqlite in the browser:** static export succeeds, but there is **no `.wasm` shipped** in this build. Web never uses expo-sqlite for durable writes.
+- **Web outbox (localStorage):** Add expense/income, budget Save, and account create try `POST /sync` first. If the network fails, the payload is queued in a **localStorage web outbox** and auto-drained on `online` / window focus / after write (and the Sync button). Happy path does **not** require tapping Sync. Native keeps SQLite + outbox.
 - Screens that call the API (settings, FX, import, cash-flow, sync) work over HTTPS + CORS `*`.
 
 ### Categories / Cash Flow on Pages (demo seed)
 
 - **Categories** reads `GET /categories?month=` for the demo user (`x-user-id: demo-user`) and renders groups + progress bars from the API payload (avoids broken expo-sqlite/wasm on static Pages). Local SQLite mirror is best-effort.
-- **Categories → edit budget** on web POSTs `budget_upsert` via `POST /sync` with `x-user-id` (same pattern as Accounts). Native keeps SQLite + outbox. No `category_upsert` in the Worker yet — create/rename UI not wired on web.
+- **Categories → edit budget** on web POSTs `budget_upsert` via `POST /sync` (queues web outbox offline). Button label is **Save**. Native keeps SQLite + outbox. No `category_upsert` in the Worker yet — create/rename UI not wired on web.
+- **Transactions → Add** on web POSTs txn `upsert` (expense or income); lists via `GET /transactions`. CTA is **Add** (offline is transparent).
 - **Dashboard → Top categories** uses the same `GET /categories?month=` payload (top spent by `spent`, with bars/amounts); falls back to local SQLite when the API is empty/unavailable.
 - **Cash Flow** reads `GET /cash-flow?month=` (Income / Spend / Net + `series` for the bar chart).
 - Empty Durable Objects auto-seed Copilot-like demo categories/budgets **and** a demo ledger when no `demo:*` fingerprints exist and there is no reviewed income/spend yet (smoke `needs_review` stubs do not block seed; never clobbers real reviewed sync data).
@@ -34,7 +36,7 @@ node apps/mobile/scripts/deploy-pages.mjs
 1. Open **https://copilot-clone.pages.dev** in Chrome/Edge/Firefox (desktop).
 2. Use Cash Flow / Categories / Transactions / More.
 3. More → Recurrings / Settings / Import CSV as in the click-test below.
-4. Durable data: use Sync against the Worker API (local SQLite on web is best-effort).
+4. Durable data: web writes go to the Worker (auto outbox drain when offline). Sync remains available; local SQLite on web is best-effort only.
 
 ## API surface (Settings / FX / CSV import / Recurrings)
 

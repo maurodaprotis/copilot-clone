@@ -73,6 +73,7 @@ export default function TransactionsScreen() {
   const [note, setNote] = useState("Café offline");
   const [currency, setCurrency] = useState("USD");
   const [categoryId, setCategoryId] = useState("cat-dining");
+  const [txnKind, setTxnKind] = useState<"expense" | "income">("expense");
   const [categoryNames, setCategoryNames] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -170,17 +171,23 @@ export default function TransactionsScreen() {
         setMsg("Enter a positive amount");
         return;
       }
-      const { transactionId } = await addExpenseOffline({
+      const { transactionId, queued } = await addExpenseOffline({
         account_id: DEMO_ACCOUNT_ID,
-        category_id: categoryId,
+        category_id: txnKind === "income" ? "cat-work" : categoryId,
         amount: n,
         currency,
         account_currency: DEMO_ACCOUNT_CURRENCY,
         reporting_currency: DEMO_REPORTING_CURRENCY,
         note: note || null,
         rate_book: { "USD:ARS:2026-09-04": 1400 },
+        type: txnKind === "income" ? "income" : "regular",
       });
-      setMsg(`Added ${transactionId.slice(0, 8)}…`);
+      // Happy path: auto-drain (web may already have POSTed; native drains SQLite).
+      const result = await syncOutbox(createApiTransport()).catch(() => ({
+        pushed: 0,
+      }));
+      const queuedHint = queued ? " · queued offline" : result.pushed ? " · synced" : "";
+      setMsg(`Added ${transactionId.slice(0, 8)}…${queuedHint}`);
       setShowComposer(false);
       await reload();
     } catch (e) {
@@ -220,8 +227,8 @@ export default function TransactionsScreen() {
     if (query && !(txn.note || "").toLowerCase().includes(query.toLowerCase()))
       return false;
     if (filter === "To Review") return txn.review_status === "needs_review";
-    if (filter === "Income") return txn.amount < 0;
-    if (filter === "Expenses") return true;
+    if (filter === "Income") return txn.type === "income";
+    if (filter === "Expenses") return txn.type !== "income";
     return true;
   }
 
@@ -342,7 +349,28 @@ export default function TransactionsScreen() {
 
       {showComposer ? (
         <Card style={styles.composer}>
-          <Text style={styles.composerTitle}>New expense</Text>
+          <Text style={styles.composerTitle}>
+            {txnKind === "income" ? "New income" : "New expense"}
+          </Text>
+          <Text style={styles.label}>Type</Text>
+          <View style={styles.chipRow}>
+            <Chip
+              label="Expense"
+              selected={txnKind === "expense"}
+              onPress={() => {
+                setTxnKind("expense");
+                setCategoryId("cat-dining");
+              }}
+            />
+            <Chip
+              label="Income"
+              selected={txnKind === "income"}
+              onPress={() => {
+                setTxnKind("income");
+                setCategoryId("cat-work");
+              }}
+            />
+          </View>
           <Text style={styles.label}>Amount</Text>
           <TextInput
             style={styles.input}
@@ -370,7 +398,10 @@ export default function TransactionsScreen() {
           />
           <Text style={styles.label}>Category</Text>
           <View style={styles.chipRow}>
-            {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map((id) => (
+            {(txnKind === "income"
+              ? ["cat-work", "cat-interest"]
+              : ["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"]
+            ).map((id) => (
               <Chip
                 key={id}
                 label={categoryNames[id] ?? id}
@@ -380,7 +411,7 @@ export default function TransactionsScreen() {
             ))}
           </View>
           <PrimaryButton
-            label="Save offline"
+            label="Add"
             onPress={() => void onAddOffline()}
             loading={busy}
           />
@@ -408,7 +439,7 @@ export default function TransactionsScreen() {
           <EmptySparkle
             title="You’re all caught up"
             body="New imports and offline expenses land here until you confirm them."
-            ctaLabel="Add expense"
+            ctaLabel="Add"
             onCta={() => setShowComposer(true)}
           />
         </Card>
@@ -447,7 +478,7 @@ export default function TransactionsScreen() {
             icon="💳"
             title="No transactions yet"
             body="Add an offline expense or import a bank CSV to get started."
-            ctaLabel="Add expense"
+            ctaLabel="Add"
             onCta={() => setShowComposer(true)}
           />
         </Card>

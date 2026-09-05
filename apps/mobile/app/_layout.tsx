@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import * as Linking from "expo-linking";
 import { handleIncomingUrl } from "../src/lib/deepLink";
 import { syncOutbox } from "../src/offline/syncOutbox";
+import { ensureWebOutboxAutodrain } from "../src/offline/webOutbox";
 import { createApiTransport } from "../src/sync/apiTransport";
 import { colors, fontFamily } from "../src/theme";
 import { WebShell } from "../src/ui";
@@ -58,6 +59,9 @@ export default function RootLayout() {
     });
 
     void syncOutbox(createApiTransport()).catch(() => undefined);
+
+    // Web: auto-drain localStorage outbox on online / focus (no manual Sync needed).
+    ensureWebOutboxAutodrain(() => createApiTransport());
 
     return () => sub.remove();
   }, []);

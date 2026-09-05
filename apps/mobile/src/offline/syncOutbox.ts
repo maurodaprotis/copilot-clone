@@ -1,4 +1,6 @@
+import { isWebRuntime } from "../db/runtime";
 import type { LocalDb } from "../db/types";
+import { drainWebOutbox } from "./webOutbox";
 
 export type SyncTransport = (items: unknown[]) => Promise<{ ok: boolean; saved?: string[] }>;
 
@@ -7,13 +9,19 @@ export type SyncTransport = (items: unknown[]) => Promise<{ ok: boolean; saved?:
  * On success: deletes outbox rows and marks transactions synced=1.
  * Does NOT change review_status — needs_review stays in To Review until reviewed.
  *
- * Web / Pages: getDb() returns in-memory LocalDb (never expo-sqlite). Account
- * create and budget edit on web bypass outbox and POST *_upsert to the Worker.
+ * Web / Pages: drains localStorage web outbox only (never expo-sqlite). Native
+ * uses SQLite outbox. Account/budget/txn writes on web try POST /sync first and
+ * enqueue the web outbox only when the network fails.
  */
 export async function syncOutbox(
   transport: SyncTransport,
   dbOverride?: LocalDb,
 ): Promise<{ pushed: number }> {
+  // Web: drain localStorage outbox and stop (Pages has no durable sqlite outbox).
+  if (!dbOverride && isWebRuntime()) {
+    return drainWebOutbox(transport);
+  }
+
   const db = dbOverride ?? (await (await import("../db/client")).getDb());
   const rows = await db.getAllAsync<{
     id: string;

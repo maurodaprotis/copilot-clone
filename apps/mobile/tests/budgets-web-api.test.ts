@@ -52,23 +52,28 @@ describe("budgets web API helpers", () => {
     });
   });
 
-  it("setBudgetViaApi throws when Worker returns not ok", async () => {
+  it("setBudgetViaApi queues web outbox when Worker returns not ok", async () => {
+    const { countWebOutbox, __resetWebOutboxForTests } = await import(
+      "../src/offline/webOutbox"
+    );
+    __resetWebOutboxForTests();
     const fetchImpl: typeof fetch = async () =>
       new Response(JSON.stringify({ ok: false, message: "nope" }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
 
-    await expect(
-      __test.setBudgetViaApi(
-        {
-          category_id: "cat-dining",
-          year_month: "2026-09",
-          budgeted_amount: 1,
-        },
-        { apiUrl: "https://example.test", userId: "demo-user", fetchImpl },
-      ),
-    ).rejects.toThrow(/nope|budget_upsert/);
+    const result = await __test.setBudgetViaApi(
+      {
+        category_id: "cat-dining",
+        year_month: "2026-09",
+        budgeted_amount: 1,
+      },
+      { apiUrl: "https://example.test", userId: "demo-user", fetchImpl },
+    );
+    expect(result.queued).toBe(true);
+    expect(countWebOutbox()).toBe(1);
+    __resetWebOutboxForTests();
   });
 });
 

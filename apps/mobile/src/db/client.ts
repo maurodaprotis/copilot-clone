@@ -216,8 +216,8 @@ async function openNativeDb(): Promise<LocalDb> {
  * Local DB access.
  * - Native (iOS/Android): expo-sqlite + outbox.
  * - Web / Cloudflare Pages: in-memory LocalDb only — never load expo-sqlite
- *   (WASM/SQLite is unreliable on Pages). Account create/list and budget edit
- *   use the Worker API on web.
+ *   (WASM/SQLite is unreliable on Pages). Writes use Worker POST /sync with a
+ *   localStorage web outbox fallback (accounts, budgets, txns).
  */
 export async function getDb(): Promise<LocalDb> {
   if (!dbPromise) {
