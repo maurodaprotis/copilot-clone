@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -9,10 +9,13 @@ import {
   View,
 } from "react-native";
 import { useFocusEffect } from "expo-router";
+import { SEED_CATEGORIES } from "@copilot-clone/domain";
 import {
   DEMO_ACCOUNT_CURRENCY,
   DEMO_ACCOUNT_ID,
   DEMO_REPORTING_CURRENCY,
+  API_URL,
+  DEMO_USER_ID,
 } from "../../src/config";
 import { addExpenseOffline } from "../../src/offline/addExpenseOffline";
 import {
@@ -21,7 +24,7 @@ import {
   listToReview,
   type LocalTransaction,
 } from "../../src/offline/queries";
-import { listCategories } from "../../src/offline/budgets";
+import { getAccountsOverview } from "../../src/offline/accounts";
 import { reviewTransaction } from "../../src/offline/reviewTransaction";
 import {
   assignTagLocal,
@@ -47,11 +50,14 @@ import {
   Screen,
   ScreenHeader,
   SearchBar,
-  SectionHeader,
+  SectionLabel,
   SegmentedControl,
+  Amount,
   TxnRow,
   useIsDesktopWeb,
 } from "../../src/ui";
+
+type CatMeta = { name: string; emoji: string; color: string };
 
 function money(amount: number, currency: string): string {
   try {
@@ -65,6 +71,103 @@ function money(amount: number, currency: string): string {
   }
 }
 
+function seedCatMeta(): Record<string, CatMeta> {
+  const out: Record<string, CatMeta> = {};
+  for (const c of SEED_CATEGORIES) {
+    out[c.id] = { name: c.name, emoji: c.emoji, color: c.color };
+  }
+  return out;
+}
+
+/** Never surface raw `cat-*` ids — human label only. */
+function humanCategory(
+  categoryId: string | null,
+  meta: Record<string, CatMeta>,
+  txnType: string,
+): CatMeta {
+  if (categoryId && meta[categoryId]) return meta[categoryId]!;
+  if (!categoryId && txnType === "income") {
+    return { name: "Income", emoji: "💵", color: "#10B981" };
+  }
+  if (categoryId?.startsWith("cat-")) {
+    const raw = categoryId.slice(4).replace(/-/g, " ");
+    const name = raw.replace(/\b\w/g, (c) => c.toUpperCase());
+    return { name, emoji: "📁", color: "#94a3b8" };
+  }
+  return { name: "Other", emoji: "👤", color: "#60a5fa" };
+}
+
+function ymdUTC(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Unknown";
+  return d.toISOString().slice(0, 10);
+}
+
+function dateSectionLabel(iso: string, now = new Date()): string {
+  const key = ymdUTC(iso);
+  if (key === "Unknown") return "Unknown";
+  const today = now.toISOString().slice(0, 10);
+  const yest = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1))
+    .toISOString()
+    .slice(0, 10);
+  if (key === today) return "Today";
+  if (key === yest) return "Yesterday";
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function detailDateLabel(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function txnTitle(txn: LocalTransaction): string {
+  return txn.note || "Transaction";
+}
+
+async function fetchCategoryMetaFromApi(): Promise<Record<string, CatMeta> | null> {
+  try {
+    const ym = new Date().toISOString().slice(0, 7);
+    const res = await fetch(
+      `${API_URL.replace(/\/$/, "")}/categories?month=${encodeURIComponent(ym)}`,
+      { headers: { "x-user-id": DEMO_USER_ID } },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      categories?: Array<{ id: string; name: string; emoji?: string; color?: string }>;
+      rows?: Array<{ category: { id: string; name: string; emoji?: string; color?: string } }>;
+    };
+    const list =
+      data.categories ??
+      data.rows?.map((r) => r.category) ??
+      [];
+    if (!list.length) return null;
+    const out: Record<string, CatMeta> = {};
+    for (const c of list) {
+      out[c.id] = {
+        name: c.name,
+        emoji: c.emoji || "•",
+        color: c.color || "#60a5fa",
+      };
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
 export default function TransactionsScreen() {
   const desktop = useIsDesktopWeb();
   const [pending, setPending] = useState<LocalTransaction[]>([]);
@@ -75,34 +178,48 @@ export default function TransactionsScreen() {
   const [currency, setCurrency] = useState("USD");
   const [categoryId, setCategoryId] = useState("cat-dining");
   const [txnKind, setTxnKind] = useState<"expense" | "income">("expense");
-  const [categoryNames, setCategoryNames] = useState<Record<string, string>>({});
+  const [catMeta, setCatMeta] = useState<Record<string, CatMeta>>(seedCatMeta);
+  const [accountNames, setAccountNames] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [showComposer, setShowComposer] = useState(false);
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
 
   const [detail, setDetail] = useState<LocalTransaction | null>(null);
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [txnTagIds, setTxnTagIds] = useState<string[]>([]);
+  const [detailNote, setDetailNote] = useState("");
   const [splitCatA, setSplitCatA] = useState("cat-dining");
   const [splitCatB, setSplitCatB] = useState("cat-groceries");
   const [splitMsg, setSplitMsg] = useState<string | null>(null);
+  const [showSplit, setShowSplit] = useState(false);
 
   const reload = useCallback(async () => {
-    const [p, a, o, cats, tags] = await Promise.all([
+    const [p, a, o, tags, apiCats, accounts] = await Promise.all([
       listToReview(),
       listAllTransactions(),
       countOutbox(),
-      listCategories(),
       listTags(),
+      fetchCategoryMetaFromApi(),
+      getAccountsOverview().catch(() => null),
     ]);
     setPending(p);
     setAll(a);
     setOutboxCount(o);
+    setCatMeta(apiCats && Object.keys(apiCats).length ? apiCats : seedCatMeta());
     const names: Record<string, string> = {};
-    for (const c of cats) names[c.id] = `${c.emoji} ${c.name}`;
-    setCategoryNames(names);
+    if (accounts?.rows) {
+      for (const row of accounts.rows) {
+        names[row.account.id] = row.account.name;
+      }
+    }
+    // Stable demo fallback so rows never show raw account ids.
+    if (!names["acc-cash-ars"]) names["acc-cash-ars"] = "Cash ARS";
+    if (!names["acc-cash"]) names["acc-cash"] = "Cash";
+    if (!names[DEMO_ACCOUNT_ID]) names[DEMO_ACCOUNT_ID] = "Demo account";
+    setAccountNames(names);
     setAllTags(tags);
   }, []);
 
@@ -114,7 +231,9 @@ export default function TransactionsScreen() {
 
   async function openDetail(txn: LocalTransaction) {
     setDetail(txn);
+    setDetailNote(txn.note || "");
     setSplitMsg(null);
+    setShowSplit(false);
     setTxnTagIds(await listTxnTagIds(txn.id));
     const legs = await listSplitLegsLocal(txn.id);
     if (legs.length >= 2) {
@@ -183,7 +302,6 @@ export default function TransactionsScreen() {
         rate_book: { "USD:ARS:2026-09-04": 1400 },
         type: txnKind === "income" ? "income" : "regular",
       });
-      // Happy path: auto-drain (web may already have POSTed; native drains SQLite).
       const result = await syncOutbox(createApiTransport()).catch(() => ({
         pushed: 0,
       }));
@@ -225,31 +343,108 @@ export default function TransactionsScreen() {
   }
 
   function matchesFilter(txn: LocalTransaction): boolean {
-    if (query && !(txn.note || "").toLowerCase().includes(query.toLowerCase()))
-      return false;
+    const title = txnTitle(txn).toLowerCase();
+    if (query && !title.includes(query.toLowerCase())) return false;
     if (filter === "To Review") return txn.review_status === "needs_review";
     if (filter === "Income") return txn.type === "income";
     if (filter === "Expenses") return txn.type !== "income";
     return true;
   }
 
+  const filtered = useMemo(() => {
+    // Prefer full list; To Review filter uses needs_review rows.
+    const source = filter === "To Review" ? pending : all.length ? all : pending;
+    return source.filter(matchesFilter);
+  }, [all, pending, filter, query, catMeta]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, LocalTransaction[]>();
+    for (const txn of filtered) {
+      const label = dateSectionLabel(txn.posted_at);
+      const list = map.get(label) ?? [];
+      list.push(txn);
+      map.set(label, list);
+    }
+    return [...map.entries()];
+  }, [filtered]);
+
+  function accountLabel(txn: LocalTransaction): string {
+    return accountNames[txn.account_id] || "Account";
+  }
+
+  function renderTxnRow(txn: LocalTransaction) {
+    const cat = humanCategory(txn.category_id, catMeta, txn.type);
+    const income = txn.type === "income";
+    return (
+      <TxnRow
+        key={txn.id}
+        merchant={txnTitle(txn)}
+        account={accountLabel(txn)}
+        categoryEmoji={cat.emoji}
+        categoryName={cat.name}
+        categoryColor={cat.color}
+        amountLabel={money(txn.amount, txn.currency)}
+        income={income}
+        showCheckbox={desktop}
+        checked={!!checked[txn.id]}
+        onToggleCheck={() =>
+          setChecked((prev) => ({ ...prev, [txn.id]: !prev[txn.id] }))
+        }
+        selected={detail?.id === txn.id}
+        onPress={() => void openDetail(txn)}
+        trailing={
+          !desktop && txn.review_status === "needs_review" ? (
+            <PrimaryButton
+              label="Review"
+              variant="secondary"
+              onPress={() => void onReview(txn.id)}
+              style={styles.reviewBtn}
+            />
+          ) : undefined
+        }
+      />
+    );
+  }
+
+  const detailCat = detail
+    ? humanCategory(detail.category_id, catMeta, detail.type)
+    : null;
+  const detailIncome = detail?.type === "income";
+
   const detailBody = detail ? (
     <View style={styles.detailInner}>
-      <View style={styles.detailTop}>
-        <Text style={styles.modalTitle}>{money(detail.amount, detail.currency)}</Text>
+      <View style={styles.detailChrome}>
+        <View style={styles.detailTypeRow}>
+          <Text style={styles.detailTypeEmoji}>{detailCat?.emoji || "•"}</Text>
+          <Text style={styles.detailType}>{detailCat?.name || "Transaction"}</Text>
+          <Text style={styles.detailTypeChev}>▾</Text>
+        </View>
         {desktop ? (
           <Pressable onPress={() => setDetail(null)} hitSlop={8} style={styles.detailClose}>
             <Text style={styles.detailCloseText}>✕</Text>
           </Pressable>
         ) : null}
       </View>
-      <Text style={styles.txnMeta}>{detail.note || "Transaction"}</Text>
-      <Text style={styles.txnMeta}>
-        {(detail.category_id
-          ? categoryNames[detail.category_id] ?? detail.category_id
-          : "Uncategorized") +
-          (detail.synced ? "" : " · pending sync")}
-      </Text>
+
+      <Text style={styles.detailDate}>{detailDateLabel(detail.posted_at)}</Text>
+
+      <View style={styles.detailHero}>
+        <Text style={styles.detailName} numberOfLines={2}>
+          {txnTitle(detail)}
+        </Text>
+        <Amount
+          value={money(detail.amount, detail.currency)}
+          variant={detailIncome ? "income" : "expense"}
+          size="hero"
+        />
+      </View>
+
+      <View style={styles.detailAccountRow}>
+        <View style={styles.accountGlyph}>
+          <Text style={styles.accountGlyphText}>🏦</Text>
+        </View>
+        <Text style={styles.detailAccountName}>{accountLabel(detail)}</Text>
+      </View>
 
       {detail.review_status === "needs_review" ? (
         <PrimaryButton
@@ -260,51 +455,78 @@ export default function TransactionsScreen() {
         />
       ) : null}
 
-      <Text style={[styles.label, { marginTop: spacing.md }]}>Tags</Text>
-      <View style={styles.chipRow}>
-        {allTags.length === 0 ? (
-          <Text style={styles.txnMeta}>Create tags in More → Tags</Text>
-        ) : (
-          allTags.map((t) => (
-            <Chip
-              key={t.id}
-              label={t.name}
-              selected={txnTagIds.includes(t.id)}
-              onPress={() => void toggleTag(t.id)}
-            />
-          ))
-        )}
+      <View style={styles.detailSection}>
+        <View style={styles.detailSectionHead}>
+          <Text style={styles.detailSectionTitle}>Tags</Text>
+          <View style={styles.detailSectionAction}>
+            <Text style={styles.detailSectionActionText}>+</Text>
+          </View>
+        </View>
+        <View style={styles.chipRow}>
+          {allTags.length === 0 ? (
+            <Text style={styles.txnMeta}>Create tags in More → Tags</Text>
+          ) : (
+            allTags.map((t) => (
+              <Chip
+                key={t.id}
+                label={t.name}
+                selected={txnTagIds.includes(t.id)}
+                onPress={() => void toggleTag(t.id)}
+              />
+            ))
+          )}
+        </View>
       </View>
 
-      <Text style={[styles.label, { marginTop: spacing.md }]}>Equal 2-way split</Text>
-      <View style={styles.chipRow}>
-        {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map((id) => (
-          <Chip
-            key={`a-${id}`}
-            label={`A: ${categoryNames[id] ?? id}`}
-            selected={splitCatA === id}
-            onPress={() => setSplitCatA(id)}
-          />
-        ))}
+      <View style={styles.detailSection}>
+        <Text style={styles.detailSectionTitle}>Notes</Text>
+        <TextInput
+          style={styles.notesInput}
+          value={detailNote}
+          onChangeText={setDetailNote}
+          placeholder="Add a note..."
+          placeholderTextColor={colors.textTertiary}
+          multiline
+        />
       </View>
-      <View style={styles.chipRow}>
-        {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map((id) => (
-          <Chip
-            key={`b-${id}`}
-            label={`B: ${categoryNames[id] ?? id}`}
-            selected={splitCatB === id}
-            onPress={() => setSplitCatB(id)}
+
+      <Pressable onPress={() => setShowSplit((v) => !v)} style={styles.splitToggle}>
+        <Text style={styles.splitToggleText}>
+          {showSplit ? "Hide split" : "Split transaction"}
+        </Text>
+      </Pressable>
+      {showSplit ? (
+        <View style={styles.splitBox}>
+          <View style={styles.chipRow}>
+            {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map((id) => (
+              <Chip
+                key={`a-${id}`}
+                label={`A: ${humanCategory(id, catMeta, "regular").name}`}
+                selected={splitCatA === id}
+                onPress={() => setSplitCatA(id)}
+              />
+            ))}
+          </View>
+          <View style={styles.chipRow}>
+            {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map((id) => (
+              <Chip
+                key={`b-${id}`}
+                label={`B: ${humanCategory(id, catMeta, "regular").name}`}
+                selected={splitCatB === id}
+                onPress={() => setSplitCatB(id)}
+              />
+            ))}
+          </View>
+          <PrimaryButton
+            label="Save equal split"
+            variant="secondary"
+            onPress={() => void onEqualSplit()}
+            loading={busy}
+            style={{ marginTop: spacing.sm }}
           />
-        ))}
-      </View>
-      <PrimaryButton
-        label="Save equal split"
-        variant="secondary"
-        onPress={() => void onEqualSplit()}
-        loading={busy}
-        style={{ marginTop: spacing.sm }}
-      />
-      {splitMsg ? <Text style={styles.msg}>{splitMsg}</Text> : null}
+          {splitMsg ? <Text style={styles.msg}>{splitMsg}</Text> : null}
+        </View>
+      ) : null}
 
       {!desktop ? (
         <PrimaryButton
@@ -320,7 +542,7 @@ export default function TransactionsScreen() {
       <Text style={styles.detailEmptyGlyph}>☰</Text>
       <Text style={styles.detailEmptyTitle}>Select a transaction</Text>
       <Text style={styles.detailEmptyBody}>
-        Pick a row to inspect amount, category, tags, and splits.
+        Pick a row to inspect date, account, category, tags, and notes.
       </Text>
     </View>
   );
@@ -403,7 +625,7 @@ export default function TransactionsScreen() {
             ).map((id) => (
               <Chip
                 key={id}
-                label={categoryNames[id] ?? id}
+                label={humanCategory(id, catMeta, txnKind).name}
                 selected={categoryId === id}
                 onPress={() => setCategoryId(id)}
               />
@@ -418,11 +640,14 @@ export default function TransactionsScreen() {
       ) : null}
 
       {msg ? <Text style={styles.msg}>{msg}</Text> : null}
+      {outboxCount > 0 ? (
+        <Text style={styles.outboxHint}>{outboxCount} queued offline</Text>
+      ) : null}
 
       <SearchBar
         value={query}
         onChangeText={setQuery}
-        placeholder="Search merchants"
+        placeholder="Search"
         style={{ marginBottom: spacing.sm }}
       />
       <SegmentedControl
@@ -432,44 +657,14 @@ export default function TransactionsScreen() {
         style={{ marginBottom: spacing.md }}
       />
 
-      <SectionHeader title="To Review" count={pending.length} />
-      {pending.length === 0 ? (
+      {filter === "To Review" && filtered.length === 0 ? (
         <Card>
           <EmptySparkle
             title="All caught up!"
             body="You have no transactions to review. We’ll let you know when something pops up."
           />
         </Card>
-      ) : (
-        pending.filter(matchesFilter).map((txn) => (
-          <Card key={txn.id} padded={false} style={styles.txnCard}>
-            <TxnRow
-              merchant={txn.note || "Expense"}
-              account={
-                txn.category_id
-                  ? categoryNames[txn.category_id] ?? txn.category_id
-                  : "Needs review"
-              }
-              amountLabel={money(txn.amount, txn.currency)}
-              selected={detail?.id === txn.id}
-              onPress={() => void openDetail(txn)}
-              trailing={
-                !desktop ? (
-                  <PrimaryButton
-                    label="Review"
-                    variant="secondary"
-                    onPress={() => void onReview(txn.id)}
-                    style={styles.reviewBtn}
-                  />
-                ) : undefined
-              }
-            />
-          </Card>
-        ))
-      )}
-
-      <SectionHeader title="All" count={all.length} />
-      {all.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <Card>
           <EmptyState
             icon="💳"
@@ -480,27 +675,20 @@ export default function TransactionsScreen() {
           />
         </Card>
       ) : (
-        all.filter(matchesFilter).map((txn) => (
-          <Card key={`all-${txn.id}`} padded={false} style={styles.txnCard}>
-            <TxnRow
-              merchant={txn.note || "—"}
-              account={
-                txn.category_id
-                  ? categoryNames[txn.category_id] ?? txn.category_id
-                  : txn.review_status === "needs_review"
-                    ? "Needs review"
-                    : "Reviewed"
-              }
-              categoryName={
-                txn.category_id
-                  ? categoryNames[txn.category_id] ?? undefined
-                  : undefined
-              }
-              amountLabel={money(txn.amount, txn.currency)}
-              selected={detail?.id === txn.id}
-              onPress={() => void openDetail(txn)}
-            />
-          </Card>
+        grouped.map(([label, rows]) => (
+          <View key={label} style={styles.group}>
+            <SectionLabel>{label}</SectionLabel>
+            <Card padded={false} style={styles.groupCard}>
+              {rows.map((txn, idx) => (
+                <View
+                  key={txn.id}
+                  style={idx < rows.length - 1 ? styles.rowDivider : undefined}
+                >
+                  {renderTxnRow(txn)}
+                </View>
+              ))}
+            </Card>
+          </View>
         ))
       )}
     </>
@@ -568,7 +756,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   msg: { ...type.footnote, color: colors.textPrimary, marginBottom: spacing.sm },
-  txnCard: { marginBottom: spacing.sm },
+  outboxHint: { ...type.footnote, color: colors.textTertiary, marginBottom: spacing.xs },
+  group: { marginBottom: spacing.sm },
+  groupCard: { overflow: "hidden" },
+  rowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.borderHairline,
+  },
   txnMeta: { ...type.footnote, marginTop: 2 },
   reviewBtn: { minWidth: 84, minHeight: 36, paddingVertical: 8 },
   listPad: {
@@ -579,12 +773,24 @@ const styles = StyleSheet.create({
   detailScroll: { flex: 1, backgroundColor: colors.bgElevated },
   detailPad: { padding: spacing.xl, paddingBottom: spacing.xxxl },
   detailInner: {},
-  detailTop: {
+  detailChrome: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
-    gap: spacing.sm,
+    marginBottom: spacing.md,
   },
+  detailTypeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.bgMuted,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  detailTypeEmoji: { fontSize: 13 },
+  detailType: { ...type.footnote, fontWeight: "600", color: colors.textPrimary },
+  detailTypeChev: { fontSize: 10, color: colors.textTertiary },
   detailClose: {
     width: 32,
     height: 32,
@@ -594,6 +800,68 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   detailCloseText: { fontSize: 14, color: colors.textSecondary, fontWeight: "600" },
+  detailDate: { ...type.footnote, color: colors.textTertiary, marginBottom: spacing.sm },
+  detailHero: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  detailName: { ...type.title2, flex: 1 },
+  detailAccountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  accountGlyph: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.bgMuted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  accountGlyphText: { fontSize: 14 },
+  detailAccountName: { ...type.subhead, color: colors.textSecondary },
+  detailSection: { marginBottom: spacing.lg },
+  detailSectionHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.sm,
+  },
+  detailSectionTitle: { ...type.footnote, fontWeight: "700", color: colors.textSecondary },
+  detailSectionAction: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.bgMuted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  detailSectionActionText: {
+    color: colors.textSecondary,
+    fontWeight: "700",
+    fontSize: 16,
+    lineHeight: 18,
+  },
+  notesInput: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderSubtle,
+    borderRadius: radius.input,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minHeight: 72,
+    backgroundColor: colors.bgInput,
+    color: colors.textPrimary,
+    fontSize: 15,
+    textAlignVertical: "top",
+  },
+  splitToggle: { paddingVertical: spacing.sm },
+  splitToggleText: { ...type.footnote, color: colors.accentBlue, fontWeight: "600" },
+  splitBox: { marginBottom: spacing.md },
   detailEmpty: {
     flex: 1,
     alignItems: "center",
@@ -621,5 +889,4 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     maxHeight: "88%",
   },
-  modalTitle: { ...type.title2, marginBottom: 4 },
 });
