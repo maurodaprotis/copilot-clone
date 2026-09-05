@@ -19,13 +19,18 @@ import {
   SegmentedControl,
   SettingsDivider,
   SettingsGroup,
+  SettingsSheet,
   Toggle,
+  useIsDesktopWeb,
+  type SettingsNavId,
 } from "../src/ui";
 
 const SERIES: FxSeries[] = ["official", "parallel", "custom"];
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const desktop = useIsDesktopWeb();
+  const [nav, setNav] = useState<SettingsNavId>("general");
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [rates, setRates] = useState<FxRate[]>([]);
   const [busy, setBusy] = useState(false);
@@ -85,6 +90,225 @@ export default function SettingsScreen() {
     }
   }
 
+  const generalBody = (
+    <>
+      {!desktop ? (
+        <View style={styles.navPills}>
+          {["General", "Account", "Banks", "About"].map((p, i) => (
+            <View key={p} style={[styles.navPill, i === 0 && styles.navPillOn]}>
+              <Text style={[styles.navPillText, i === 0 && styles.navPillTextOn]}>
+                {p}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      <SettingsGroup label="Appearance">
+        <View style={styles.row}>
+          <View style={styles.rowText}>
+            <Text style={styles.rowLabel}>Theme</Text>
+            <Text style={styles.rowDesc}>Customize how Copilot looks</Text>
+          </View>
+          <SegmentedControl
+            options={["Light", "Auto", "Dark"]}
+            value={themeMode}
+            onChange={setThemeMode}
+            tone="light"
+            style={{ flex: 0, minWidth: 168 }}
+          />
+        </View>
+      </SettingsGroup>
+
+      <SettingsGroup label="Budgeting">
+        <View style={styles.row}>
+          <View style={styles.rowText}>
+            <Text style={styles.rowLabel}>Enable budgeting</Text>
+            <Text style={styles.rowDesc}>Set monthly budgets for categories</Text>
+          </View>
+          <Toggle value={budgetingOn} onChange={setBudgetingOn} />
+        </View>
+        <SettingsDivider />
+        <View style={styles.row}>
+          <View style={styles.rowText}>
+            <Text style={styles.rowLabel}>Enable rollover</Text>
+            <Text style={styles.rowDesc}>Allow budgets across months</Text>
+          </View>
+          <Toggle value={rolloverOn} onChange={setRolloverOn} />
+        </View>
+      </SettingsGroup>
+
+      <SettingsGroup label="Reporting & FX">
+        <View style={[styles.row, styles.col]}>
+          <View style={styles.rowText}>
+            <Text style={styles.rowLabel}>Reporting currency</Text>
+            <Text style={styles.rowDesc}>USD-first · ARS supported</Text>
+          </View>
+          <View style={styles.pills}>
+            {["USD", "ARS", "EUR"].map((c) => (
+              <Chip
+                key={c}
+                label={c}
+                tone="filled"
+                selected={settings?.reporting_currency === c}
+                onPress={() => void saveSettings({ reporting_currency: c })}
+              />
+            ))}
+          </View>
+        </View>
+        <SettingsDivider />
+        <View style={[styles.row, styles.col]}>
+          <View style={styles.rowText}>
+            <Text style={styles.rowLabel}>Default FX series</Text>
+            <Text style={styles.rowDesc}>
+              Used when converting to reporting currency
+            </Text>
+          </View>
+          <View style={styles.pills}>
+            {SERIES.map((s) => (
+              <Chip
+                key={s}
+                label={s}
+                tone="filled"
+                selected={settings?.default_fx_series === s}
+                onPress={() => void saveSettings({ default_fx_series: s })}
+              />
+            ))}
+          </View>
+        </View>
+        <SettingsDivider />
+        <ListRow
+          title="Timezone"
+          subtitle={settings?.timezone ?? "America/Argentina/Salta"}
+          chevron
+        />
+        <SettingsDivider />
+        <ListRow
+          title="Locale"
+          subtitle={settings?.locale ?? "en-US"}
+          chevron
+        />
+      </SettingsGroup>
+
+      <SettingsGroup label="Manual FX rates">
+        <View style={styles.fieldGrid}>
+          <View style={styles.fieldCol}>
+            <Text style={styles.fieldLabel}>Base</Text>
+            <TextInput
+              style={styles.field}
+              value={base}
+              onChangeText={setBase}
+              autoCapitalize="characters"
+              placeholderTextColor={colors.textTertiary}
+            />
+          </View>
+          <View style={styles.fieldCol}>
+            <Text style={styles.fieldLabel}>Quote</Text>
+            <TextInput
+              style={styles.field}
+              value={quote}
+              onChangeText={setQuote}
+              autoCapitalize="characters"
+              placeholderTextColor={colors.textTertiary}
+            />
+          </View>
+        </View>
+        <View style={styles.fieldGrid}>
+          <View style={styles.fieldCol}>
+            <Text style={styles.fieldLabel}>Date</Text>
+            <TextInput
+              style={styles.field}
+              value={asOf}
+              onChangeText={setAsOf}
+              placeholderTextColor={colors.textTertiary}
+            />
+          </View>
+          <View style={styles.fieldCol}>
+            <Text style={styles.fieldLabel}>Rate</Text>
+            <TextInput
+              style={styles.field}
+              value={rate}
+              onChangeText={setRate}
+              keyboardType="decimal-pad"
+              placeholderTextColor={colors.textTertiary}
+            />
+          </View>
+        </View>
+        <View
+          style={[
+            styles.pills,
+            { paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
+          ]}
+        >
+          {SERIES.map((s) => (
+            <Chip
+              key={s}
+              label={s}
+              tone="filled"
+              selected={book === s}
+              onPress={() => setBook(s)}
+            />
+          ))}
+        </View>
+        <PrimaryButton
+          label="Save FX rate"
+          onPress={() => void onAddFx()}
+          loading={busy}
+          style={styles.saveBtn}
+        />
+        {msg ? <Text style={styles.msg}>{msg}</Text> : null}
+      </SettingsGroup>
+
+      {rates.slice(0, 8).map((r) => (
+        <SettingsGroup key={`${r.from}:${r.to}:${r.on_date}:${r.rate_book}`}>
+          <ListRow
+            title={`${r.from}/${r.to} = ${r.rate}`}
+            subtitle={`${r.on_date} · ${r.rate_book} · ${r.source ?? "manual"}`}
+          />
+        </SettingsGroup>
+      ))}
+    </>
+  );
+
+  const stub = (label: string, body: string) => (
+    <SettingsGroup label={label}>
+      <View style={styles.stub}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        <Text style={styles.rowDesc}>{body}</Text>
+      </View>
+    </SettingsGroup>
+  );
+
+  const pane =
+    nav === "general" || nav === "fx"
+      ? generalBody
+      : nav === "account"
+        ? stub("Account", "Profile and security — coming soon.")
+        : nav === "subscription"
+          ? stub("Subscription", "Copilot Pro stub — out of polish scope.")
+          : nav === "banks"
+            ? stub("Banks", "Manual accounts only — no Plaid in this clone.")
+            : stub("About", "Copilot Money clone · USD-first · multi-currency ARS.");
+
+  if (desktop) {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false, presentation: "transparentModal" }} />
+        <SettingsSheet
+          activeNav={nav}
+          onNavChange={setNav}
+          title={
+            nav === "fx"
+              ? "FX & Import"
+              : nav.charAt(0).toUpperCase() + nav.slice(1)
+          }
+        >
+          {pane}
+        </SettingsSheet>
+      </>
+    );
+  }
+
   return (
     <>
       <Stack.Screen
@@ -99,174 +323,7 @@ export default function SettingsScreen() {
         }}
       />
       <Screen refreshing={false} onRefresh={() => void reload()}>
-        <View style={styles.navPills}>
-          {["General", "Account", "Banks", "About"].map((p, i) => (
-            <View key={p} style={[styles.navPill, i === 0 && styles.navPillOn]}>
-              <Text style={[styles.navPillText, i === 0 && styles.navPillTextOn]}>
-                {p}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        <SettingsGroup label="Appearance">
-          <View style={styles.row}>
-            <View style={styles.rowText}>
-              <Text style={styles.rowLabel}>Theme</Text>
-              <Text style={styles.rowDesc}>Customize how Copilot looks</Text>
-            </View>
-            <SegmentedControl
-              options={["Light", "Auto", "Dark"]}
-              value={themeMode}
-              onChange={setThemeMode}
-              tone="light"
-              style={{ flex: 0, minWidth: 168 }}
-            />
-          </View>
-        </SettingsGroup>
-
-        <SettingsGroup label="Budgeting">
-          <View style={styles.row}>
-            <View style={styles.rowText}>
-              <Text style={styles.rowLabel}>Enable budgeting</Text>
-              <Text style={styles.rowDesc}>Set monthly budgets for categories</Text>
-            </View>
-            <Toggle value={budgetingOn} onChange={setBudgetingOn} />
-          </View>
-          <SettingsDivider />
-          <View style={styles.row}>
-            <View style={styles.rowText}>
-              <Text style={styles.rowLabel}>Enable rollover</Text>
-              <Text style={styles.rowDesc}>Allow budgets across months</Text>
-            </View>
-            <Toggle value={rolloverOn} onChange={setRolloverOn} />
-          </View>
-        </SettingsGroup>
-
-        <SettingsGroup label="Reporting & FX">
-          <View style={[styles.row, styles.col]}>
-            <View style={styles.rowText}>
-              <Text style={styles.rowLabel}>Reporting currency</Text>
-              <Text style={styles.rowDesc}>USD-first · ARS supported</Text>
-            </View>
-            <View style={styles.pills}>
-              {["USD", "ARS", "EUR"].map((c) => (
-                <Chip
-                  key={c}
-                  label={c}
-                  tone="filled"
-                  selected={settings?.reporting_currency === c}
-                  onPress={() => void saveSettings({ reporting_currency: c })}
-                />
-              ))}
-            </View>
-          </View>
-          <SettingsDivider />
-          <View style={[styles.row, styles.col]}>
-            <View style={styles.rowText}>
-              <Text style={styles.rowLabel}>Default FX series</Text>
-              <Text style={styles.rowDesc}>
-                Used when converting to reporting currency
-              </Text>
-            </View>
-            <View style={styles.pills}>
-              {SERIES.map((s) => (
-                <Chip
-                  key={s}
-                  label={s}
-                  tone="filled"
-                  selected={settings?.default_fx_series === s}
-                  onPress={() => void saveSettings({ default_fx_series: s })}
-                />
-              ))}
-            </View>
-          </View>
-          <SettingsDivider />
-          <ListRow
-            title="Timezone"
-            subtitle={settings?.timezone ?? "America/Argentina/Salta"}
-            chevron
-          />
-          <SettingsDivider />
-          <ListRow
-            title="Locale"
-            subtitle={settings?.locale ?? "en-US"}
-            chevron
-          />
-        </SettingsGroup>
-
-        <SettingsGroup label="Manual FX rates">
-          <View style={styles.fieldGrid}>
-            <View style={styles.fieldCol}>
-              <Text style={styles.fieldLabel}>Base</Text>
-              <TextInput
-                style={styles.field}
-                value={base}
-                onChangeText={setBase}
-                autoCapitalize="characters"
-                placeholderTextColor={colors.textTertiary}
-              />
-            </View>
-            <View style={styles.fieldCol}>
-              <Text style={styles.fieldLabel}>Quote</Text>
-              <TextInput
-                style={styles.field}
-                value={quote}
-                onChangeText={setQuote}
-                autoCapitalize="characters"
-                placeholderTextColor={colors.textTertiary}
-              />
-            </View>
-          </View>
-          <View style={styles.fieldGrid}>
-            <View style={styles.fieldCol}>
-              <Text style={styles.fieldLabel}>Date</Text>
-              <TextInput
-                style={styles.field}
-                value={asOf}
-                onChangeText={setAsOf}
-                placeholderTextColor={colors.textTertiary}
-              />
-            </View>
-            <View style={styles.fieldCol}>
-              <Text style={styles.fieldLabel}>Rate</Text>
-              <TextInput
-                style={styles.field}
-                value={rate}
-                onChangeText={setRate}
-                keyboardType="decimal-pad"
-                placeholderTextColor={colors.textTertiary}
-              />
-            </View>
-          </View>
-          <View style={[styles.pills, { paddingHorizontal: spacing.lg, marginBottom: spacing.sm }]}>
-            {SERIES.map((s) => (
-              <Chip
-                key={s}
-                label={s}
-                tone="filled"
-                selected={book === s}
-                onPress={() => setBook(s)}
-              />
-            ))}
-          </View>
-          <PrimaryButton
-            label="Save FX rate"
-            onPress={() => void onAddFx()}
-            loading={busy}
-            style={styles.saveBtn}
-          />
-          {msg ? <Text style={styles.msg}>{msg}</Text> : null}
-        </SettingsGroup>
-
-        {rates.slice(0, 8).map((r) => (
-          <SettingsGroup key={`${r.from}:${r.to}:${r.on_date}:${r.rate_book}`}>
-            <ListRow
-              title={`${r.from}/${r.to} = ${r.rate}`}
-              subtitle={`${r.on_date} · ${r.rate_book} · ${r.source ?? "manual"}`}
-            />
-          </SettingsGroup>
-        ))}
+        {generalBody}
       </Screen>
     </>
   );
@@ -335,11 +392,16 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 14,
   },
-  saveBtn: { marginHorizontal: spacing.lg, marginBottom: spacing.lg, marginTop: 4 },
+  saveBtn: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    marginTop: 4,
+  },
   msg: {
     ...type.footnote,
     marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
     color: colors.textPrimary,
   },
+  stub: { padding: spacing.lg },
 });

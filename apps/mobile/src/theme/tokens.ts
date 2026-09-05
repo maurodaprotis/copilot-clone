@@ -308,9 +308,13 @@ export const layout = {
   screenPadding: spacing.screenPaddingX,
   cardPadding: spacing.cardPadding,
   sectionGap: spacing.sectionGap,
-  maxContentWidth: 720,
+  maxContentWidth: 1100,
+  maxContentWidthMobile: 720,
   listPaneRatio: 0.58,
   detailPaneRatio: 0.42,
+  sidebarWidth: 220,
+  desktopBreakpoint: 900,
+  webContentPadding: 20,
 } as const;
 
 export const theme = {

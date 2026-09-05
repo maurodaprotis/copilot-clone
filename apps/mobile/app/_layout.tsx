@@ -68,7 +68,13 @@ export default function RootLayout() {
       <Stack screenOptions={headerOpts}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="accounts" options={{ title: "Accounts" }} />
-        <Stack.Screen name="settings" options={{ title: "Settings" }} />
+        <Stack.Screen
+          name="settings"
+          options={{
+            title: "Settings",
+            presentation: "modal",
+          }}
+        />
         <Stack.Screen name="import" options={{ title: "Import" }} />
         <Stack.Screen name="rules" options={{ title: "Name Rules" }} />
         <Stack.Screen name="tags" options={{ title: "Tags" }} />

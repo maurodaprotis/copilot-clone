@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, spacing, type } from "../theme";
+import { useIsDesktopWeb } from "./useIsDesktopWeb";
 
 type Props = {
   title: string;
@@ -14,14 +15,16 @@ export function ScreenHeader({
   title,
   subtitle,
   right,
-  large = true,
+  large,
   badge,
 }: Props) {
+  const desktop = useIsDesktopWeb();
+  const useLarge = large ?? !desktop;
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, desktop && styles.wrapDense]}>
       <View style={styles.row}>
         <View style={styles.titleRow}>
-          <Text style={large ? type.largeTitle : type.title1} numberOfLines={1}>
+          <Text style={useLarge ? type.largeTitle : type.title1} numberOfLines={1}>
             {title}
           </Text>
           {badge != null ? (
@@ -38,7 +41,8 @@ export function ScreenHeader({
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginBottom: spacing.lg },
+  wrap: { marginBottom: spacing.md },
+  wrapDense: { marginBottom: spacing.sm },
   row: {
     flexDirection: "row",
     alignItems: "center",
