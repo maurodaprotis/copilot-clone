@@ -40,6 +40,7 @@ import {
   Card,
   Chip,
   EmptySparkle,
+  IconButton,
   EmptyState,
   MasterDetail,
   PrimaryButton,
@@ -328,15 +329,13 @@ export default function TransactionsScreen() {
     <>
       <ScreenHeader
         title="Transactions"
-        subtitle={outboxCount ? `${outboxCount} in outbox` : "Inbox & history"}
         right={
           <View style={styles.headerActions}>
-            <PrimaryButton
-              label="Sync"
-              variant="ghost"
+            <IconButton
+              glyph="↓"
+              accessibilityLabel="Sync"
               onPress={() => void onSync()}
               loading={busy}
-              style={styles.smallBtn}
             />
             <PrimaryButton
               label="+ Add"
@@ -437,10 +436,8 @@ export default function TransactionsScreen() {
       {pending.length === 0 ? (
         <Card>
           <EmptySparkle
-            title="You’re all caught up"
-            body="New imports and offline expenses land here until you confirm them."
-            ctaLabel="Add"
-            onCta={() => setShowComposer(true)}
+            title="All caught up!"
+            body="You have no transactions to review. We’ll let you know when something pops up."
           />
         </Card>
       ) : (
@@ -449,9 +446,9 @@ export default function TransactionsScreen() {
             <TxnRow
               merchant={txn.note || "Expense"}
               account={
-                (txn.category_id
+                txn.category_id
                   ? categoryNames[txn.category_id] ?? txn.category_id
-                  : "Uncategorized") + (txn.synced ? "" : " · pending sync")
+                  : "Needs review"
               }
               amountLabel={money(txn.amount, txn.currency)}
               selected={detail?.id === txn.id}
@@ -487,11 +484,18 @@ export default function TransactionsScreen() {
           <Card key={`all-${txn.id}`} padded={false} style={styles.txnCard}>
             <TxnRow
               merchant={txn.note || "—"}
-              account={`${txn.review_status}${
+              account={
                 txn.category_id
-                  ? ` · ${categoryNames[txn.category_id] ?? txn.category_id}`
-                  : ""
-              }`}
+                  ? categoryNames[txn.category_id] ?? txn.category_id
+                  : txn.review_status === "needs_review"
+                    ? "Needs review"
+                    : "Reviewed"
+              }
+              categoryName={
+                txn.category_id
+                  ? categoryNames[txn.category_id] ?? undefined
+                  : undefined
+              }
               amountLabel={money(txn.amount, txn.currency)}
               selected={detail?.id === txn.id}
               onPress={() => void openDetail(txn)}
@@ -542,6 +546,19 @@ export default function TransactionsScreen() {
 
 const styles = StyleSheet.create({
   headerActions: { flexDirection: "row", gap: spacing.xs },
+  syncChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: colors.bgMuted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  syncChipText: {
+    ...type.captionEmphasized,
+    color: colors.textSecondary,
+    fontSize: 13,
+  },
   smallBtn: { minHeight: 36, paddingVertical: 8, minWidth: 64 },
   composer: { marginBottom: spacing.md },
   composerTitle: { ...type.headline, marginBottom: spacing.sm },

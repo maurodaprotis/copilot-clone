@@ -37,7 +37,7 @@ import {
   Card,
   DashboardGrid,
   EmptySparkle,
-  GhostButton,
+  IconButton,
   PrimaryButton,
   ProgressBar,
   Screen,
@@ -123,6 +123,17 @@ function usd(n: number): string {
   return `${sign}$${Math.abs(n).toFixed(0)}`;
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const n = parseInt(full, 16);
+  if (Number.isNaN(n)) return `rgba(96,165,250,${alpha})`;
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 export default function DashboardScreen() {
   const router = useRouter();
   const [items, setItems] = useState<LocalTransaction[]>([]);
@@ -145,7 +156,6 @@ export default function DashboardScreen() {
       const spendP = fetchSpendingLine(ym);
       const reviewP = listToReview().catch(() => [] as LocalTransaction[]);
       const accountsP = getAccountsOverview().catch(() => null);
-      // Prefer API rows for Pages (same source as Categories tab).
       const topCatsApiP = fetchTopCategoriesFromApi(ym);
       const overviewP = getCategoryBudgetOverview(ym).catch(() => null);
 
@@ -229,16 +239,33 @@ export default function DashboardScreen() {
 
   const spendSafe = spend ?? emptySpend();
   const over = spendSafe.spent_mtd - spendSafe.total_budget;
-  const overLabel =
+  const underBudget = over < 0;
+  const heroLabel =
     spend == null && loading
       ? "…"
-      : over > 0
-        ? `$${over.toFixed(0)} over`
-        : over < 0
-          ? `$${Math.abs(over).toFixed(0)} under`
+      : underBudget
+        ? usd(spendSafe.spent_mtd)
+        : over > 0
+          ? `${usd(over)} over`
           : spendSafe.total_budget === 0 && spendSafe.spent_mtd === 0
             ? "$0"
-            : "On budget";
+            : usd(spendSafe.spent_mtd);
+  const heroSub = underBudget
+    ? `${usd(Math.abs(over))} under budget`
+    : over > 0
+      ? `${usd(spendSafe.total_budget)} budgeted`
+      : `${usd(spendSafe.total_budget)} budgeted`;
+
+  const netWorth = assets - debts;
+  const nwTotal = assets + debts;
+  const assetShare = nwTotal > 0 ? assets / nwTotal : 0.5;
+  // Skin-only delta chrome (no history API yet): show structure with 0 change.
+  const deltaAbs = 0;
+  const deltaPct = 0;
+  const deltaUp = deltaAbs >= 0;
+
+  const spendTotal = topCats.reduce((s, r) => s + r.spent, 0);
+  const maxCatSpend = Math.max(...topCats.map((r) => r.spent), 1);
 
   const spendCard = (
     <Card
@@ -247,15 +274,19 @@ export default function DashboardScreen() {
       actionLabel="Transactions ›"
       onAction={() => router.push("/transactions")}
     >
-      <View style={styles.heroCenter}>
+      <View style={styles.heroLeft}>
         <Amount
-          value={overLabel}
+          value={heroLabel}
           variant={over > 0 ? "over" : "expense"}
           size="display"
-          style={{ textAlign: "center" }}
         />
-        <Text style={styles.spendMeta}>
-          ${spendSafe.total_budget.toFixed(0)} budgeted
+        <Text
+          style={[
+            styles.spendMeta,
+            underBudget && { color: colors.incomeGreenText },
+          ]}
+        >
+          {heroSub}
         </Text>
       </View>
       <SpendingLineChart
@@ -270,7 +301,8 @@ export default function DashboardScreen() {
               )
         }
         width={300}
-        height={96}
+        height={148}
+        showLegend
       />
       {over > 0 ? (
         <View style={styles.callout}>
@@ -287,6 +319,31 @@ export default function DashboardScreen() {
       actionLabel="Accounts ›"
       onAction={() => router.push("/accounts")}
     >
+      <Text style={styles.nwTotal}>{usd(netWorth)}</Text>
+      <View style={styles.nwBarTrack}>
+        <View
+          style={[
+            styles.nwBarSeg,
+            {
+              flex: Math.max(assetShare, 0.02),
+              backgroundColor: colors.assetBlueDot,
+              borderTopLeftRadius: 4,
+              borderBottomLeftRadius: 4,
+            },
+          ]}
+        />
+        <View
+          style={[
+            styles.nwBarSeg,
+            {
+              flex: Math.max(1 - assetShare, 0.02),
+              backgroundColor: colors.debtOrangeDot,
+              borderTopRightRadius: 4,
+              borderBottomRightRadius: 4,
+            },
+          ]}
+        />
+      </View>
       <View style={styles.nwRow}>
         <View style={styles.nwCol}>
           <View style={styles.dotRow}>
@@ -303,6 +360,20 @@ export default function DashboardScreen() {
           <Text style={styles.nwValue}>{usd(debts)}</Text>
         </View>
       </View>
+      <Pressable
+        style={styles.deltaBox}
+        onPress={() => router.push("/accounts")}
+      >
+        <View style={styles.deltaIcon}>
+          <Text style={styles.deltaIconText}>{deltaUp ? "↗" : "↘"}</Text>
+        </View>
+        <Text style={styles.deltaText} numberOfLines={1}>
+          {deltaAbs === 0
+            ? "No change vs last month"
+            : `${deltaUp ? "Up" : "Down"} ${usd(Math.abs(deltaAbs))} (${deltaPct.toFixed(2)}%) vs last month`}
+        </Text>
+        <Text style={styles.deltaChev}>›</Text>
+      </Pressable>
       <SegmentedControl
         options={["1W", "1M", "3M", "YTD", "1Y", "ALL"]}
         value={nwRange}
@@ -316,27 +387,21 @@ export default function DashboardScreen() {
     <Card
       style={styles.gridCard}
       title="Transactions to review"
+      badge={items.length}
       actionLabel={items.length ? "View all ›" : undefined}
       onAction={items.length ? () => router.push("/transactions") : undefined}
     >
       {items.length === 0 && !loading ? (
         <EmptySparkle
-          title="You're all caught up"
-          body="No transactions to unlock intelligence."
-          ctaLabel="Add transaction"
-          onCta={() => router.push("/transactions")}
-          secondary={
-            <Pressable onPress={() => router.push("/import")}>
-              <Text style={styles.linkCenter}>Import CSV</Text>
-            </Pressable>
-          }
+          title="All caught up!"
+          body="You have no transactions to review. We'll let you know when something pops up."
         />
       ) : (
         items.slice(0, 4).map((txn) => (
           <TxnRow
             key={txn.id}
             merchant={txn.note || "Expense"}
-            account={txn.synced ? "Needs review" : "Unsynced · needs review"}
+            account="Needs review"
             amountLabel={formatMoney(txn.amount, txn.currency)}
             trailing={
               <PrimaryButton
@@ -363,24 +428,31 @@ export default function DashboardScreen() {
         <Text style={styles.emptyHint}>No spending this month yet.</Text>
       ) : (
         topCats.map((row) => {
-          const pct =
-            row.budgeted_amount > 0
-              ? Math.min(1, row.spent / row.budgeted_amount)
-              : row.spent > 0
-                ? 1
-                : 0;
+          const share =
+            spendTotal > 0 ? Math.round((row.spent / spendTotal) * 100) : 0;
+          const bar = row.spent / maxCatSpend;
+          const catColor = row.category.color || colors.accentBlue;
           return (
             <View key={row.category.id} style={styles.catRow}>
-              <Text style={styles.catEmoji}>{row.category.emoji || "•"}</Text>
+              <View
+                style={[
+                  styles.catIcon,
+                  { backgroundColor: hexToRgba(catColor, 0.18) },
+                ]}
+              >
+                <Text style={styles.catEmoji}>{row.category.emoji || "•"}</Text>
+              </View>
               <View style={styles.catMid}>
                 <Text style={styles.catName} numberOfLines={1}>
                   {row.category.name}
                 </Text>
                 <ProgressBar
-                  progress={pct}
-                  color={pct > 1 ? colors.overBudgetRed : colors.progressFill}
+                  progress={bar}
+                  color={colors.progressFill}
+                  height={4}
                 />
               </View>
+              <Text style={styles.catPct}>{share}%</Text>
               <Text style={styles.catAmt}>{usd(row.spent)}</Text>
             </View>
           );
@@ -394,11 +466,11 @@ export default function DashboardScreen() {
       <ScreenHeader
         title="Dashboard"
         right={
-          <GhostButton
-            label={syncing ? "…" : "Sync"}
+          <IconButton
+            glyph="↻"
+            accessibilityLabel="Sync"
             onPress={() => void onSync()}
             loading={syncing}
-            style={styles.syncBtn}
           />
         }
       />
@@ -427,7 +499,7 @@ export default function DashboardScreen() {
             <TxnRow
               key={r.id}
               merchant={r.name}
-              account={`due ${r.next_expected_date} · ${r.kind}`}
+              account={`due ${r.next_expected_date}`}
               amountLabel={formatMoney(r.expected_amount, r.currency)}
               onPress={() => router.push("/recurrings")}
             />
@@ -439,45 +511,82 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  syncBtn: { minWidth: 72, paddingVertical: 8, minHeight: 36 },
   gridCard: { flex: 1, marginBottom: 0 },
-  heroCenter: { alignItems: "center", marginBottom: spacing.xs },
-  spendMeta: { ...type.footnote, marginTop: 2, color: colors.textSecondary },
+  heroLeft: { marginBottom: spacing.sm },
+  spendMeta: { ...type.footnote, marginTop: 4, color: colors.textSecondary, fontWeight: "500" },
   callout: {
-    alignSelf: "center",
-    marginTop: spacing.sm,
+    alignSelf: "flex-end",
+    marginTop: -28,
+    marginRight: 8,
     backgroundColor: colors.overBudgetCallout,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: radius.pill,
   },
-  calloutText: { color: "#fff", fontWeight: "700", fontSize: 12 },
+  calloutText: { color: "#fff", fontWeight: "700", fontSize: 11 },
   status: { ...type.footnote, color: colors.textPrimary, marginTop: spacing.sm },
-  linkCenter: {
-    ...type.callout,
-    color: colors.accentBlue,
-    fontWeight: "600",
-    textAlign: "center",
-    marginTop: spacing.xs,
+  reviewBtn: { minWidth: 72, minHeight: 32, paddingVertical: 6, paddingHorizontal: 10 },
+  emptyHint: { ...type.footnote, textAlign: "center", paddingVertical: 8, color: colors.textSecondary },
+  nwTotal: { ...type.displayAmount, marginBottom: spacing.sm },
+  nwBarTrack: {
+    flexDirection: "row",
+    height: 8,
+    borderRadius: 4,
+    overflow: "hidden",
+    backgroundColor: colors.progressTrack,
+    marginBottom: spacing.md,
   },
-  reviewBtn: { minWidth: 84, minHeight: 36, paddingVertical: 8 },
-  emptyHint: { ...type.footnote, textAlign: "center", paddingVertical: 2, color: colors.textSecondary },
-  nwRow: { flexDirection: "row", gap: spacing.lg, marginBottom: spacing.xs },
+  nwBarSeg: { height: 8 },
+  nwRow: { flexDirection: "row", gap: spacing.lg, marginBottom: spacing.sm },
   nwCol: { flex: 1 },
   dotRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
   dot: { width: 8, height: 8, borderRadius: 4 },
   nwLabel: { ...type.footnote, color: colors.textSecondary },
-  nwValue: { ...type.title2 },
+  nwValue: { ...type.title3, fontSize: 17 },
+  deltaBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.accentBlueSoft,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  deltaIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: colors.accentBlue,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  deltaIconText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  deltaText: { ...type.footnote, flex: 1, color: colors.textPrimary, fontWeight: "600" },
+  deltaChev: { fontSize: 16, color: colors.textTertiary, fontWeight: "600" },
   catRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    paddingVertical: 4,
-    minHeight: 36,
+    paddingVertical: 6,
+    minHeight: 40,
   },
-  catEmoji: { fontSize: 16, width: 24, textAlign: "center" },
-  catMid: { flex: 1, minWidth: 0, gap: 3 },
-  catName: { ...type.headline },
-  catAmt: { ...type.amountList },
+  catIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  catEmoji: { fontSize: 15 },
+  catMid: { flex: 1, minWidth: 0, gap: 4 },
+  catName: { ...type.headline, fontSize: 14 },
+  catPct: {
+    ...type.footnote,
+    color: colors.textTertiary,
+    fontWeight: "600",
+    minWidth: 32,
+    textAlign: "right",
+  },
+  catAmt: { ...type.amountList, fontSize: 14, minWidth: 52, textAlign: "right" },
   upcoming: { marginTop: spacing.cardGap },
 });

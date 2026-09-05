@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text } from "react-native";
-import { colors, radius, spacing, type } from "../theme";
+import { colors, radius, type } from "../theme";
 
 type Props = {
   label: string;
@@ -33,21 +33,23 @@ export function Chip({ label, selected, onPress, tone = "soft" }: Props) {
 const styles = StyleSheet.create({
   chip: {
     borderRadius: radius.pill,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    backgroundColor: colors.bgCard,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: colors.bgMuted,
+    borderWidth: 0,
   },
   onSoft: {
     backgroundColor: colors.accentBlueSoft,
-    borderColor: "transparent",
   },
   onFilled: {
     backgroundColor: colors.navy,
-    borderColor: colors.navy,
   },
-  text: { ...type.callout, fontSize: 13, fontWeight: "600", color: colors.textPrimary },
+  text: {
+    ...type.callout,
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textSecondary,
+  },
   textOnSoft: { color: colors.accentBlue },
   textOnFilled: { color: colors.textInverse },
 });

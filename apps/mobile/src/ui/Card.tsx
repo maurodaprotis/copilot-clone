@@ -10,6 +10,8 @@ type Props = {
   actionLabel?: string;
   onAction?: () => void;
   onPress?: () => void;
+  /** Optional count / pill in the card header (e.g. To Review "0"). */
+  badge?: string | number;
 };
 
 export function Card({
@@ -20,17 +22,25 @@ export function Card({
   actionLabel,
   onAction,
   onPress,
+  badge,
 }: Props) {
   const body = (
     <View style={[styles.card, padded && styles.padded, style]}>
       {title ? (
         <View style={styles.header}>
           <Text style={styles.title}>{title}</Text>
-          {actionLabel && onAction ? (
-            <Pressable onPress={onAction} hitSlop={8}>
-              <Text style={styles.action}>{actionLabel}</Text>
-            </Pressable>
-          ) : null}
+          <View style={styles.headerRight}>
+            {badge != null ? (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{badge}</Text>
+              </View>
+            ) : null}
+            {actionLabel && onAction ? (
+              <Pressable onPress={onAction} hitSlop={8}>
+                <Text style={styles.action}>{actionLabel}</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
       ) : null}
       {children}
@@ -51,17 +61,31 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgCard,
     borderRadius: radius.card,
     ...shadow.card,
-    overflow: "hidden",
   },
   padded: { padding: layout.cardPadding },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
   },
-  title: { ...type.headline },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
+  title: { ...type.headline, fontSize: 15, letterSpacing: -0.1 },
   action: { ...type.footnote, color: colors.textSecondary, fontWeight: "600" },
+  badge: {
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.bgMuted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.textSecondary,
+  },
 });
 
 export const cardGap = spacing.cardGap;
