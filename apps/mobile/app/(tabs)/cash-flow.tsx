@@ -7,7 +7,7 @@ import {
   type CashFlowComparison,
   type CashFlowSummary,
 } from "@copilot-clone/domain";
-import { API_URL, DEMO_USER_ID } from "../../src/config";
+import { API_URL, DEMO_USER_ID, getApiUserId } from "../../src/config";
 import { getCashFlowOverview } from "../../src/offline/cashflow";
 import { colors, radius, spacing, type } from "../../src/theme";
 import { Card, Screen, ScreenHeader, SegmentedControl } from "../../src/ui";
@@ -140,7 +140,7 @@ export default function CashFlowScreen() {
       try {
         const res = await fetch(
           `${API_URL.replace(/\/$/, "")}/cash-flow?month=${encodeURIComponent(month)}`,
-          { headers: { "x-user-id": DEMO_USER_ID } },
+          { headers: { "x-user-id": getApiUserId() } },
         );
         if (res.ok) {
           const json = (await res.json()) as CashFlowPayload;

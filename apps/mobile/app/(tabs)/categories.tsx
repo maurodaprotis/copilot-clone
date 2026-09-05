@@ -10,7 +10,7 @@ import {
 import { useFocusEffect } from "expo-router";
 import type { CategoryBudgetRow, CategoryGroup } from "@copilot-clone/domain";
 import { currentYearMonth } from "@copilot-clone/domain";
-import { API_URL, DEMO_USER_ID } from "../../src/config";
+import { API_URL, DEMO_USER_ID, getApiUserId } from "../../src/config";
 import {
   getCategoryBudgetOverview,
   setBudgetAmount,
@@ -49,7 +49,7 @@ async function fetchCategoriesOverview(yearMonth: string): Promise<Overview | nu
   try {
     const res = await fetch(
       `${API_URL.replace(/\/$/, "")}/categories?month=${encodeURIComponent(yearMonth)}`,
-      { headers: { "x-user-id": DEMO_USER_ID } },
+      { headers: { "x-user-id": getApiUserId() } },
     );
     if (!res.ok) return null;
     const data = (await res.json()) as {

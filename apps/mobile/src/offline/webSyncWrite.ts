@@ -5,11 +5,11 @@
  */
 
 import { enqueueWebOutbox } from "./webOutbox";
+import { getApiUserId } from "../sync/userId";
 
 const DEFAULT_API_URL =
   (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_API_URL) ||
   "https://copilot-clone-api.maurodaprotis.workers.dev";
-const DEFAULT_USER_ID = "demo-user";
 
 export type PostSyncOptions = {
   apiUrl?: string;
@@ -22,7 +22,7 @@ export async function postSyncItems(
   options: PostSyncOptions = {},
 ): Promise<{ ok: boolean; saved?: string[]; error?: string }> {
   const apiUrl = options.apiUrl ?? DEFAULT_API_URL;
-  const userId = options.userId ?? DEFAULT_USER_ID;
+  const userId = options.userId ?? getApiUserId();
   const fetchImpl = options.fetchImpl ?? fetch;
 
   const res = await fetchImpl(`${apiUrl.replace(/\/$/, "")}/sync`, {

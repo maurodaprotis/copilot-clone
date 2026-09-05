@@ -1,4 +1,5 @@
-import { API_URL, DEMO_USER_ID } from "../config";
+import { API_URL } from "../config";
+import { getApiUserId } from "./userId";
 import { applyRemoteAccountsSnapshot } from "../offline/accounts";
 import type { Account } from "@copilot-clone/domain";
 
@@ -8,7 +9,7 @@ export async function pullAccountsFromApi(options?: {
   fetchImpl?: typeof fetch;
 }): Promise<boolean> {
   const apiUrl = options?.apiUrl ?? API_URL;
-  const userId = options?.userId ?? DEMO_USER_ID;
+  const userId = options?.userId ?? getApiUserId();
   const fetchImpl = options?.fetchImpl ?? fetch;
 
   try {

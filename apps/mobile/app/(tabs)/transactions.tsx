@@ -16,6 +16,7 @@ import {
   DEMO_REPORTING_CURRENCY,
   API_URL,
   DEMO_USER_ID,
+  getApiUserId,
 } from "../../src/config";
 import { addExpenseOffline } from "../../src/offline/addExpenseOffline";
 import {
@@ -142,7 +143,7 @@ async function fetchCategoryMetaFromApi(): Promise<Record<string, CatMeta> | nul
     const ym = new Date().toISOString().slice(0, 7);
     const res = await fetch(
       `${API_URL.replace(/\/$/, "")}/categories?month=${encodeURIComponent(ym)}`,
-      { headers: { "x-user-id": DEMO_USER_ID } },
+      { headers: { "x-user-id": getApiUserId() } },
     );
     if (!res.ok) return null;
     const data = (await res.json()) as {
@@ -171,6 +172,7 @@ async function fetchCategoryMetaFromApi(): Promise<Record<string, CatMeta> | nul
 export default function TransactionsScreen() {
   const desktop = useIsDesktopWeb();
   const [pending, setPending] = useState<LocalTransaction[]>([]);
+  const [loading, setLoading] = useState(true);
   const [all, setAll] = useState<LocalTransaction[]>([]);
   const [outboxCount, setOutboxCount] = useState(0);
   const [amount, setAmount] = useState("50");
@@ -197,30 +199,35 @@ export default function TransactionsScreen() {
   const [showSplit, setShowSplit] = useState(false);
 
   const reload = useCallback(async () => {
-    const [p, a, o, tags, apiCats, accounts] = await Promise.all([
-      listToReview(),
-      listAllTransactions(),
-      countOutbox(),
-      listTags(),
-      fetchCategoryMetaFromApi(),
-      getAccountsOverview().catch(() => null),
-    ]);
-    setPending(p);
-    setAll(a);
-    setOutboxCount(o);
-    setCatMeta(apiCats && Object.keys(apiCats).length ? apiCats : seedCatMeta());
-    const names: Record<string, string> = {};
-    if (accounts?.rows) {
-      for (const row of accounts.rows) {
-        names[row.account.id] = row.account.name;
+    setLoading(true);
+    try {
+      const [p, a, o, tags, apiCats, accounts] = await Promise.all([
+        listToReview().catch(() => [] as LocalTransaction[]),
+        listAllTransactions().catch(() => [] as LocalTransaction[]),
+        countOutbox().catch(() => 0),
+        listTags().catch(() => [] as Tag[]),
+        fetchCategoryMetaFromApi(),
+        getAccountsOverview().catch(() => null),
+      ]);
+      setPending(p);
+      setAll(a);
+      setOutboxCount(o);
+      setCatMeta(apiCats && Object.keys(apiCats).length ? apiCats : seedCatMeta());
+      const names: Record<string, string> = {};
+      if (accounts?.rows) {
+        for (const row of accounts.rows) {
+          names[row.account.id] = row.account.name;
+        }
       }
+      // Stable demo fallback so rows never show raw account ids.
+      if (!names["acc-cash-ars"]) names["acc-cash-ars"] = "Cash ARS";
+      if (!names["acc-cash"]) names["acc-cash"] = "Cash";
+      if (!names[DEMO_ACCOUNT_ID]) names[DEMO_ACCOUNT_ID] = "Demo account";
+      setAccountNames(names);
+      setAllTags(tags);
+    } finally {
+      setLoading(false);
     }
-    // Stable demo fallback so rows never show raw account ids.
-    if (!names["acc-cash-ars"]) names["acc-cash-ars"] = "Cash ARS";
-    if (!names["acc-cash"]) names["acc-cash"] = "Cash";
-    if (!names[DEMO_ACCOUNT_ID]) names[DEMO_ACCOUNT_ID] = "Demo account";
-    setAccountNames(names);
-    setAllTags(tags);
   }, []);
 
   useFocusEffect(
@@ -321,8 +328,10 @@ export default function TransactionsScreen() {
     setMsg(null);
     try {
       const result = await syncOutbox(createApiTransport());
-      setMsg(result.pushed > 0 ? `Synced ${result.pushed}` : "Outbox empty");
+      // Always re-GET from Worker (demo-user) — Sync is not required for first paint,
+      // but if tapped it must refresh lists even when outbox is empty.
       await reload();
+      setMsg(result.pushed > 0 ? `Synced ${result.pushed}` : "Up to date");
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally {
@@ -657,7 +666,11 @@ export default function TransactionsScreen() {
         style={{ marginBottom: spacing.md }}
       />
 
-      {filter === "To Review" && filtered.length === 0 ? (
+      {loading && filtered.length === 0 ? (
+        <Card>
+          <Text style={styles.txnMeta}>Loading transactions…</Text>
+        </Card>
+      ) : filter === "To Review" && filtered.length === 0 ? (
         <Card>
           <EmptySparkle
             title="All caught up!"
@@ -700,7 +713,7 @@ export default function TransactionsScreen() {
         list={
           <Screen
             flush
-            refreshing={false}
+            refreshing={loading}
             onRefresh={() => void reload()}
             contentStyle={styles.listPad}
           >
@@ -721,7 +734,7 @@ export default function TransactionsScreen() {
   }
 
   return (
-    <Screen refreshing={false} onRefresh={() => void reload()}>
+    <Screen refreshing={loading} onRefresh={() => void reload()}>
       {listBody}
       <Modal visible={!!detail} animationType="slide" transparent>
         <View style={styles.modalBackdrop}>

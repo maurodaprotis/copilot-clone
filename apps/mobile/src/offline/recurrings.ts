@@ -3,7 +3,7 @@ import {
   DEFAULT_UPCOMING_WITHIN_DAYS,
   upcomingRecurrings,
 } from "@copilot-clone/domain";
-import { API_URL, DEMO_USER_ID } from "../config";
+import { API_URL, getApiUserId } from "../config";
 import type { LocalDb } from "../db/types";
 
 async function dbOr(dbOverride?: LocalDb): Promise<LocalDb> {
@@ -154,7 +154,7 @@ export async function pullRecurringsFromApi(
   withinDays = DEFAULT_UPCOMING_WITHIN_DAYS,
 ): Promise<{ recurrings: Recurring[]; upcoming: Recurring[] }> {
   const url = `${API_URL.replace(/\/$/, "")}/recurrings?within_days=${withinDays}`;
-  const res = await fetch(url, { headers: { "x-user-id": DEMO_USER_ID } });
+  const res = await fetch(url, { headers: { "x-user-id": getApiUserId() } });
   if (!res.ok) throw new Error(`GET /recurrings ${res.status}`);
   const data = (await res.json()) as {
     recurrings?: Recurring[];

@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import { DEMO_USER_ID as DEMO_USER_ID_SYNC } from "./sync/userId";
 
 const extra = (Constants.expoConfig?.extra ?? {}) as {
   apiUrl?: string;
@@ -13,7 +14,8 @@ export const API_URL =
   extra.apiUrl ||
   "https://copilot-clone-api.maurodaprotis.workers.dev";
 
-export const DEMO_USER_ID = "demo-user";
+export const DEMO_USER_ID = DEMO_USER_ID_SYNC;
+export { getApiUserId } from "./sync/userId";
 export const DEMO_ACCOUNT_ID = "acc-cash-ars";
 export const DEMO_ACCOUNT_CURRENCY = "ARS";
 export const DEMO_REPORTING_CURRENCY = "USD";

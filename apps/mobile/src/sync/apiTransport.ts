@@ -1,4 +1,5 @@
-import { API_URL, DEMO_USER_ID } from "../config";
+import { API_URL } from "../config";
+import { getApiUserId } from "./userId";
 import type { SyncTransport } from "../offline/syncOutbox";
 
 export type CreateApiTransportOptions = {
@@ -12,7 +13,7 @@ export function createApiTransport(
   options: CreateApiTransportOptions = {},
 ): SyncTransport {
   const apiUrl = options.apiUrl ?? API_URL;
-  const userId = options.userId ?? DEMO_USER_ID;
+  const userId = options.userId ?? getApiUserId();
   const fetchImpl = options.fetchImpl ?? fetch;
 
   return async (items) => {

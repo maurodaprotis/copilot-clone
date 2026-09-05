@@ -1,4 +1,5 @@
-import { API_URL, DEMO_USER_ID } from "../config";
+import { API_URL } from "../config";
+import { getApiUserId } from "./userId";
 import { applyRemoteCategoriesSnapshot } from "../offline/budgets";
 import { currentYearMonth } from "@copilot-clone/domain";
 
@@ -9,7 +10,7 @@ export async function pullCategoriesFromApi(options?: {
   fetchImpl?: typeof fetch;
 }): Promise<boolean> {
   const apiUrl = options?.apiUrl ?? API_URL;
-  const userId = options?.userId ?? DEMO_USER_ID;
+  const userId = options?.userId ?? getApiUserId();
   const month = options?.month ?? currentYearMonth();
   const fetchImpl = options?.fetchImpl ?? fetch;
 
