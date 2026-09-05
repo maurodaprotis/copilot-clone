@@ -1,13 +1,22 @@
+import { isWebRuntime } from "../db/runtime";
 import {
   buildAccountBalanceRows,
   normalizeAccountType,
   normalizeReviewStatus,
   type Account,
+  type AccountBalanceRow,
   type RateBook,
   type Transaction,
 } from "@copilot-clone/domain";
 import type { LocalDb } from "../db/types";
 import type { LocalTransaction } from "./queries";
+
+// Avoid importing ../config (expo-constants) so vitest/node stays RN-free.
+const DEFAULT_API_URL =
+  (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_API_URL) ||
+  "https://copilot-clone-api.maurodaprotis.workers.dev";
+const DEFAULT_USER_ID = "demo-user";
+
 
 function toDomainTxn(row: LocalTransaction): Transaction {
   return {
@@ -65,9 +74,110 @@ async function loadRateBook(db: LocalDb): Promise<RateBook> {
   return book;
 }
 
+type AccountsOverview = {
+  rows: AccountBalanceRow[];
+  net_worth_reporting: number;
+  reporting_currency?: string;
+  on_date: string;
+};
+
+async function fetchAccountsOverviewFromApi(options?: {
+  apiUrl?: string;
+  userId?: string;
+  fetchImpl?: typeof fetch;
+}): Promise<AccountsOverview | null> {
+  const apiUrl = options?.apiUrl ?? DEFAULT_API_URL;
+  const userId = options?.userId ?? DEFAULT_USER_ID;
+  const fetchImpl = options?.fetchImpl ?? fetch;
+  try {
+    const res = await fetchImpl(`${apiUrl.replace(/\/$/, "")}/accounts`, {
+      headers: { "x-user-id": userId },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      rows?: AccountBalanceRow[];
+      net_worth_reporting?: number;
+      reporting_currency?: string;
+      on_date?: string;
+    };
+    if (!Array.isArray(data.rows)) return null;
+    return {
+      rows: data.rows,
+      net_worth_reporting: Number(data.net_worth_reporting ?? 0),
+      reporting_currency: data.reporting_currency,
+      on_date: data.on_date ?? new Date().toISOString().slice(0, 10),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function upsertAccountViaApi(
+  input: {
+    id?: string;
+    name: string;
+    currency: string;
+    type: Account["type"];
+    include_in_net_worth?: boolean;
+    current_balance?: number;
+    is_archived?: boolean;
+  },
+  options?: {
+    apiUrl?: string;
+    userId?: string;
+    fetchImpl?: typeof fetch;
+  },
+): Promise<{ id: string; outboxId: string }> {
+  const apiUrl = options?.apiUrl ?? DEFAULT_API_URL;
+  const userId = options?.userId ?? DEFAULT_USER_ID;
+  const fetchImpl = options?.fetchImpl ?? fetch;
+  const id = input.id ?? crypto.randomUUID();
+  const now = new Date().toISOString();
+  const includeNw = input.include_in_net_worth === false ? false : true;
+  const balance = Number(input.current_balance ?? 0);
+  const archived = Boolean(input.is_archived);
+  const payload = {
+    op: "account_upsert" as const,
+    id,
+    name: input.name,
+    currency: input.currency.toUpperCase(),
+    type: normalizeAccountType(input.type),
+    is_archived: archived,
+    include_in_net_worth: includeNw,
+    current_balance: balance,
+    updated_at: now,
+  };
+
+  const res = await fetchImpl(`${apiUrl.replace(/\/$/, "")}/sync`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-user-id": userId,
+    },
+    body: JSON.stringify({ items: [payload] }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      text || `account_upsert failed (${res.status})`,
+    );
+  }
+  const data = (await res.json()) as { ok?: boolean; error?: string; message?: string };
+  if (!data.ok) {
+    throw new Error(data.message || data.error || "account_upsert failed");
+  }
+  // Web has no SQLite outbox — sync already applied via Worker API.
+  return { id, outboxId: `web-api:${id}` };
+}
+
 export async function listLocalAccounts(
   dbOverride?: LocalDb,
 ): Promise<Account[]> {
+  if (!dbOverride && isWebRuntime()) {
+    const overview = await fetchAccountsOverviewFromApi();
+    if (overview) return overview.rows.map((r) => r.account);
+    return [];
+  }
   const db = dbOverride ?? (await (await import("../db/client")).getDb());
   const rows = await db.getAllAsync<LocalAccount>(
     "SELECT * FROM accounts ORDER BY type ASC, name ASC",
@@ -76,6 +186,16 @@ export async function listLocalAccounts(
 }
 
 export async function getAccountsOverview(dbOverride?: LocalDb) {
+  if (!dbOverride && isWebRuntime()) {
+    const remote = await fetchAccountsOverviewFromApi();
+    if (remote) return remote;
+    return {
+      rows: [] as AccountBalanceRow[],
+      net_worth_reporting: 0,
+      on_date: new Date().toISOString().slice(0, 10),
+    };
+  }
+
   const db = dbOverride ?? (await (await import("../db/client")).getDb());
   const [accounts, txnRows, rateBook] = await Promise.all([
     listLocalAccounts(db),
@@ -105,6 +225,11 @@ export async function upsertAccountLocal(
   },
   dbOverride?: LocalDb,
 ): Promise<{ id: string; outboxId: string }> {
+  // Pages / web: never touch expo-sqlite — push account_upsert straight to Worker.
+  if (!dbOverride && isWebRuntime()) {
+    return upsertAccountViaApi(input);
+  }
+
   const db = dbOverride ?? (await (await import("../db/client")).getDb());
   const id = input.id ?? crypto.randomUUID();
   const now = new Date().toISOString();
@@ -169,6 +294,9 @@ export async function applyRemoteAccountsSnapshot(
   },
   dbOverride?: LocalDb,
 ): Promise<void> {
+  // Web list/create already use the Worker API; skip local mirror.
+  if (!dbOverride && isWebRuntime()) return;
+
   const db = dbOverride ?? (await (await import("../db/client")).getDb());
   await db.withTransactionAsync(async () => {
     for (const row of snapshot.rows) {
@@ -192,3 +320,9 @@ export async function applyRemoteAccountsSnapshot(
     }
   });
 }
+
+/** Test/helper export: direct API upsert (used by smoke tests). */
+export const __test = {
+  upsertAccountViaApi,
+  fetchAccountsOverviewFromApi,
+};

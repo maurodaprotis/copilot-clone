@@ -122,7 +122,7 @@ export default function AccountsScreen() {
         current_balance: bal,
         include_in_net_worth: form.include_in_net_worth,
       });
-      await syncOutbox(createApiTransport());
+      await syncOutbox(createApiTransport()).catch(() => ({ pushed: 0 }));
       setFormOpen(false);
       await reload();
       setMsg(form.id ? "Account updated" : "Account created");
