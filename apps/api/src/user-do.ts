@@ -10,8 +10,10 @@ import {
   buildAccountBalanceRows,
   buildCategoryBudgetRows,
   budgetPaceByDay,
+  cashFlowSeries,
   computeCashFlowWithPrior,
   cumulativeSpendByDay,
+  seedDemoTransactions,
   currentYearMonth,
   defaultUserSettings,
   deriveAmounts,
@@ -141,6 +143,7 @@ export class UserDO extends DurableObject<Env> {
        WHERE review_status = 'pending'`,
     );
     this.seedIfEmpty();
+    this.seedDemoTxnsIfEmpty();
     this.seedFxIfNeeded();
     this.seedSettingsIfNeeded();
     this.migrateAccountTypesAndBalances();
@@ -199,6 +202,60 @@ export class UserDO extends DurableObject<Env> {
          id, name, currency, type, is_archived, include_in_net_worth, current_balance
        ) VALUES ('acc-cash-ars', 'Cash ARS', 'ARS', 'other', 0, 1, 0)`,
     );
+  }
+
+
+  /**
+   * Demo ledger for empty DOs (Pages preview / Paul).
+   * Only inserts when there are zero live transactions — never clobbers real sync data.
+   */
+  private seedDemoTxnsIfEmpty(): void {
+    const rows = [
+      ...this.ctx.storage.sql.exec(
+        `SELECT COUNT(*) AS c FROM transactions WHERE deleted_at IS NULL`,
+      ),
+    ];
+    const count = Number(rows[0]?.c ?? 0);
+    if (count > 0) return;
+
+    const now = new Date().toISOString();
+    for (const t of seedDemoTransactions()) {
+      this.ctx.storage.sql.exec(
+        `INSERT OR IGNORE INTO transactions (
+          id, account_id, category_id, amount, currency,
+          amount_account, amount_reporting, type, is_refund,
+          review_status, posted_at, name, note, transfer_pair_id, fingerprint,
+          is_split_parent, synced, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, 1, ?, ?)`,
+        t.id,
+        t.account_id,
+        t.category_id,
+        t.amount,
+        t.currency,
+        t.amount_account,
+        t.amount_reporting,
+        t.type,
+        t.is_refund,
+        t.review_status,
+        t.posted_at,
+        t.name,
+        t.note,
+        t.fingerprint,
+        now,
+        now,
+      );
+    }
+
+    const accounts = this.listAccounts();
+    const transactions = this.listTransactionsDomain();
+    for (const account of accounts) {
+      const bal = recomputeBalanceFromOpeningAndTxns(account, transactions);
+      this.ctx.storage.sql.exec(
+        `UPDATE accounts SET current_balance = ? WHERE id = ?`,
+        bal,
+        account.id,
+      );
+    }
   }
 
   private seedFxIfNeeded(): void {
@@ -1103,11 +1160,18 @@ export class UserDO extends DurableObject<Env> {
   private cashFlowPayload(yearMonth: string) {
     const transactions = this.listTransactionsDomain();
     const settings = this.getSettings();
-    return computeCashFlowWithPrior({
+    const comparison = computeCashFlowWithPrior({
       transactions,
       year_month: yearMonth,
       reporting_currency: settings.reporting_currency,
     });
+    const series = cashFlowSeries({
+      transactions,
+      year_month: yearMonth,
+      months: 6,
+      reporting_currency: settings.reporting_currency,
+    });
+    return { ...comparison, series };
   }
 
   private accountsPayload() {

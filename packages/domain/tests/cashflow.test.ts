@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   computeCashFlow,
+  cashFlowSeries,
   computeCashFlowWithPrior,
   priorYearMonth,
   shiftYearMonth,
+  seedDemoTransactions,
   type Transaction,
 } from "../src/index.js";
 
@@ -94,5 +96,40 @@ describe("cash flow", () => {
     expect(cmp.prior.net).toBe(600);
     expect(cmp.net).toBe(1500);
     expect(cmp.net_delta).toBe(900);
+  });
+});
+
+describe("cashFlowSeries + demo seed", () => {
+  it("builds oldest→newest monthly points", () => {
+    const demo = seedDemoTransactions({ yearMonth: "2026-09" });
+    const asDomain = demo.map((d) =>
+      txn({
+        id: d.id,
+        account_id: d.account_id,
+        category_id: d.category_id,
+        amount: d.amount,
+        amount_account: d.amount_account,
+        amount_reporting: d.amount_reporting,
+        type: d.type,
+        is_refund: d.is_refund === 1,
+        review_status: d.review_status,
+        posted_at: d.posted_at,
+        name: d.name,
+        fingerprint: d.fingerprint,
+      }),
+    );
+    const series = cashFlowSeries({
+      transactions: asDomain,
+      year_month: "2026-09",
+      months: 3,
+    });
+    expect(series.map((s) => s.year_month)).toEqual([
+      "2026-07",
+      "2026-08",
+      "2026-09",
+    ]);
+    expect(series[2]!.income).toBeGreaterThan(0);
+    expect(series[2]!.spend).toBeGreaterThan(0);
+    expect(series[2]!.net).toBe(series[2]!.income - series[2]!.spend);
   });
 });
