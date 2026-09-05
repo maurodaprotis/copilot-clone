@@ -17,11 +17,20 @@ export function DashboardGrid({ children, style }: Props) {
     return <View style={[styles.stack, style]}>{items}</View>;
   }
 
+  const rows: ReactNode[][] = [];
+  for (let i = 0; i < items.length; i += 2) {
+    rows.push(items.slice(i, i + 2));
+  }
   return (
-    <View style={[styles.grid, style]}>
-      {items.map((child, i) => (
-        <View key={i} style={styles.item}>
-          {child}
+    <View style={[styles.stack, style]}>
+      {rows.map((row, idx) => (
+        <View key={idx} style={styles.row}>
+          {row.map((child, j) => (
+            <View key={j} style={styles.col}>
+              {child}
+            </View>
+          ))}
+          {row.length === 1 ? <View style={styles.col} /> : null}
         </View>
       ))}
     </View>
@@ -35,27 +44,11 @@ export function DashboardGridItem({
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
-  const desktop = useIsDesktopWeb();
-  return (
-    <View style={[desktop ? styles.item : undefined, style]}>{children}</View>
-  );
+  return <View style={style}>{children}</View>;
 }
 
 const styles = StyleSheet.create({
-  stack: {
-    gap: spacing.cardGap,
-  },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.cardGap,
-    alignItems: "stretch",
-  },
-  item: {
-    // RN-web: ~2 columns with gap
-    width: "calc(50% - 6px)" as unknown as number,
-    minWidth: 280,
-    flexGrow: 1,
-    flexShrink: 1,
-  },
+  stack: { gap: spacing.cardGap },
+  row: { flexDirection: "row", gap: spacing.cardGap, alignItems: "stretch" },
+  col: { flex: 1, minWidth: 0 },
 });

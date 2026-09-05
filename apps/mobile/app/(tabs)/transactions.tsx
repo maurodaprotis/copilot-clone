@@ -64,134 +64,6 @@ function money(amount: number, currency: string): string {
   }
 }
 
-function DetailPanel({
-  detail,
-  allTags,
-  txnTagIds,
-  categoryNames,
-  splitCatA,
-  splitCatB,
-  setSplitCatA,
-  setSplitCatB,
-  splitMsg,
-  busy,
-  onToggleTag,
-  onEqualSplit,
-  onClose,
-  onReview,
-}: {
-  detail: LocalTransaction;
-  allTags: Tag[];
-  txnTagIds: string[];
-  categoryNames: Record<string, string>;
-  splitCatA: string;
-  splitCatB: string;
-  setSplitCatA: (v: string) => void;
-  setSplitCatB: (v: string) => void;
-  splitMsg: string | null;
-  busy: boolean;
-  onToggleTag: (id: string) => void;
-  onEqualSplit: () => void;
-  onClose: () => void;
-  onReview: (id: string) => void;
-}) {
-  return (
-    <ScrollView
-      style={styles.detailScroll}
-      contentContainerStyle={styles.detailPad}
-      keyboardShouldPersistTaps="handled"
-    >
-      <View style={styles.detailTop}>
-        <Text style={styles.detailMeta}>
-          {detail.review_status === "needs_review" ? "Needs review" : "Reviewed"}
-        </Text>
-        <Pressable onPress={onClose} hitSlop={10} style={styles.closeBtn}>
-          <Text style={styles.closeBtnText}>✕</Text>
-        </Pressable>
-      </View>
-      <Text style={styles.detailMerchant}>{detail.note || "Transaction"}</Text>
-      <Text
-        style={[
-          styles.detailAmount,
-          detail.amount < 0 && { color: colors.incomeGreen },
-        ]}
-      >
-        {money(detail.amount, detail.currency)}
-      </Text>
-      <Text style={styles.detailAccount}>
-        {detail.category_id
-          ? categoryNames[detail.category_id] ?? detail.category_id
-          : "Uncategorized"}
-        {detail.synced ? "" : " · pending sync"}
-      </Text>
-
-      {detail.review_status === "needs_review" ? (
-        <PrimaryButton
-          label="Mark reviewed"
-          onPress={() => onReview(detail.id)}
-          loading={busy}
-          style={{ marginTop: spacing.md }}
-        />
-      ) : null}
-
-      <Text style={[styles.label, { marginTop: spacing.lg }]}>Tags</Text>
-      <View style={styles.chipRow}>
-        {allTags.length === 0 ? (
-          <Text style={styles.txnMeta}>Create tags in More → Tags</Text>
-        ) : (
-          allTags.map((t) => (
-            <Chip
-              key={t.id}
-              label={t.name}
-              selected={txnTagIds.includes(t.id)}
-              onPress={() => onToggleTag(t.id)}
-            />
-          ))
-        )}
-      </View>
-
-      <Text style={[styles.label, { marginTop: spacing.md }]}>Notes</Text>
-      <Text style={styles.notePlaceholder}>Add a note…</Text>
-
-      <Text style={[styles.label, { marginTop: spacing.md }]}>
-        Equal 2-way split
-      </Text>
-      <View style={styles.chipRow}>
-        {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map(
-          (id) => (
-            <Chip
-              key={`a-${id}`}
-              label={`A: ${categoryNames[id] ?? id}`}
-              selected={splitCatA === id}
-              onPress={() => setSplitCatA(id)}
-            />
-          ),
-        )}
-      </View>
-      <View style={styles.chipRow}>
-        {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map(
-          (id) => (
-            <Chip
-              key={`b-${id}`}
-              label={`B: ${categoryNames[id] ?? id}`}
-              selected={splitCatB === id}
-              onPress={() => setSplitCatB(id)}
-            />
-          ),
-        )}
-      </View>
-      <PrimaryButton
-        label="Save equal split"
-        variant="secondary"
-        onPress={onEqualSplit}
-        loading={busy}
-        style={{ marginTop: spacing.sm }}
-      />
-      {splitMsg ? <Text style={styles.msg}>{splitMsg}</Text> : null}
-    </ScrollView>
-  );
-}
-
 export default function TransactionsScreen() {
   const desktop = useIsDesktopWeb();
   const [pending, setPending] = useState<LocalTransaction[]>([]);
@@ -344,7 +216,108 @@ export default function TransactionsScreen() {
     }
   }
 
-  const listContent = (
+  function matchesFilter(txn: LocalTransaction): boolean {
+    if (query && !(txn.note || "").toLowerCase().includes(query.toLowerCase()))
+      return false;
+    if (filter === "To Review") return txn.review_status === "needs_review";
+    if (filter === "Income") return txn.amount < 0;
+    if (filter === "Expenses") return true;
+    return true;
+  }
+
+  const detailBody = detail ? (
+    <View style={styles.detailInner}>
+      <View style={styles.detailTop}>
+        <Text style={styles.modalTitle}>{money(detail.amount, detail.currency)}</Text>
+        {desktop ? (
+          <Pressable onPress={() => setDetail(null)} hitSlop={8} style={styles.detailClose}>
+            <Text style={styles.detailCloseText}>✕</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      <Text style={styles.txnMeta}>{detail.note || "Transaction"}</Text>
+      <Text style={styles.txnMeta}>
+        {(detail.category_id
+          ? categoryNames[detail.category_id] ?? detail.category_id
+          : "Uncategorized") +
+          (detail.synced ? "" : " · pending sync")}
+      </Text>
+
+      {detail.review_status === "needs_review" ? (
+        <PrimaryButton
+          label="Mark reviewed"
+          onPress={() => void onReview(detail.id)}
+          loading={busy}
+          style={{ marginTop: spacing.md }}
+        />
+      ) : null}
+
+      <Text style={[styles.label, { marginTop: spacing.md }]}>Tags</Text>
+      <View style={styles.chipRow}>
+        {allTags.length === 0 ? (
+          <Text style={styles.txnMeta}>Create tags in More → Tags</Text>
+        ) : (
+          allTags.map((t) => (
+            <Chip
+              key={t.id}
+              label={t.name}
+              selected={txnTagIds.includes(t.id)}
+              onPress={() => void toggleTag(t.id)}
+            />
+          ))
+        )}
+      </View>
+
+      <Text style={[styles.label, { marginTop: spacing.md }]}>Equal 2-way split</Text>
+      <View style={styles.chipRow}>
+        {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map((id) => (
+          <Chip
+            key={`a-${id}`}
+            label={`A: ${categoryNames[id] ?? id}`}
+            selected={splitCatA === id}
+            onPress={() => setSplitCatA(id)}
+          />
+        ))}
+      </View>
+      <View style={styles.chipRow}>
+        {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map((id) => (
+          <Chip
+            key={`b-${id}`}
+            label={`B: ${categoryNames[id] ?? id}`}
+            selected={splitCatB === id}
+            onPress={() => setSplitCatB(id)}
+          />
+        ))}
+      </View>
+      <PrimaryButton
+        label="Save equal split"
+        variant="secondary"
+        onPress={() => void onEqualSplit()}
+        loading={busy}
+        style={{ marginTop: spacing.sm }}
+      />
+      {splitMsg ? <Text style={styles.msg}>{splitMsg}</Text> : null}
+
+      {!desktop ? (
+        <PrimaryButton
+          label="Close"
+          variant="ghost"
+          onPress={() => setDetail(null)}
+          style={{ marginTop: spacing.md }}
+        />
+      ) : null}
+    </View>
+  ) : (
+    <View style={styles.detailEmpty}>
+      <Text style={styles.detailEmptyGlyph}>☰</Text>
+      <Text style={styles.detailEmptyTitle}>Select a transaction</Text>
+      <Text style={styles.detailEmptyBody}>
+        Pick a row to inspect amount, category, tags, and splits.
+      </Text>
+    </View>
+  );
+
+  const listBody = (
     <>
       <ScreenHeader
         title="Transactions"
@@ -397,16 +370,14 @@ export default function TransactionsScreen() {
           />
           <Text style={styles.label}>Category</Text>
           <View style={styles.chipRow}>
-            {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map(
-              (id) => (
-                <Chip
-                  key={id}
-                  label={categoryNames[id] ?? id}
-                  selected={categoryId === id}
-                  onPress={() => setCategoryId(id)}
-                />
-              ),
-            )}
+            {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map((id) => (
+              <Chip
+                key={id}
+                label={categoryNames[id] ?? id}
+                selected={categoryId === id}
+                onPress={() => setCategoryId(id)}
+              />
+            ))}
           </View>
           <PrimaryButton
             label="Save offline"
@@ -442,35 +413,31 @@ export default function TransactionsScreen() {
           />
         </Card>
       ) : (
-        pending
-          .filter(
-            (txn) =>
-              !query ||
-              (txn.note || "").toLowerCase().includes(query.toLowerCase()),
-          )
-          .map((txn) => (
-            <Card key={txn.id} padded={false} style={styles.txnCard}>
-              <TxnRow
-                merchant={txn.note || "Expense"}
-                account={
-                  (txn.category_id
-                    ? categoryNames[txn.category_id] ?? txn.category_id
-                    : "Uncategorized") + (txn.synced ? "" : " · pending sync")
-                }
-                amountLabel={money(txn.amount, txn.currency)}
-                selected={desktop && detail?.id === txn.id}
-                onPress={() => void openDetail(txn)}
-                trailing={
+        pending.filter(matchesFilter).map((txn) => (
+          <Card key={txn.id} padded={false} style={styles.txnCard}>
+            <TxnRow
+              merchant={txn.note || "Expense"}
+              account={
+                (txn.category_id
+                  ? categoryNames[txn.category_id] ?? txn.category_id
+                  : "Uncategorized") + (txn.synced ? "" : " · pending sync")
+              }
+              amountLabel={money(txn.amount, txn.currency)}
+              selected={detail?.id === txn.id}
+              onPress={() => void openDetail(txn)}
+              trailing={
+                !desktop ? (
                   <PrimaryButton
                     label="Review"
                     variant="secondary"
                     onPress={() => void onReview(txn.id)}
                     style={styles.reviewBtn}
                   />
-                }
-              />
-            </Card>
-          ))
+                ) : undefined
+              }
+            />
+          </Card>
+        ))
       )}
 
       <SectionHeader title="All" count={all.length} />
@@ -485,82 +452,48 @@ export default function TransactionsScreen() {
           />
         </Card>
       ) : (
-        all
-          .filter((txn) => {
-            if (
-              query &&
-              !(txn.note || "").toLowerCase().includes(query.toLowerCase())
-            )
-              return false;
-            if (filter === "To Review")
-              return txn.review_status === "needs_review";
-            if (filter === "Income") return txn.amount < 0;
-            if (filter === "Expenses") return true;
-            return true;
-          })
-          .map((txn) => (
-            <Card key={`all-${txn.id}`} padded={false} style={styles.txnCard}>
-              <TxnRow
-                merchant={txn.note || "—"}
-                account={`${txn.review_status}${
-                  txn.category_id
-                    ? ` · ${categoryNames[txn.category_id] ?? txn.category_id}`
-                    : ""
-                }`}
-                amountLabel={money(txn.amount, txn.currency)}
-                selected={desktop && detail?.id === txn.id}
-                onPress={() => void openDetail(txn)}
-              />
-            </Card>
-          ))
+        all.filter(matchesFilter).map((txn) => (
+          <Card key={`all-${txn.id}`} padded={false} style={styles.txnCard}>
+            <TxnRow
+              merchant={txn.note || "—"}
+              account={`${txn.review_status}${
+                txn.category_id
+                  ? ` · ${categoryNames[txn.category_id] ?? txn.category_id}`
+                  : ""
+              }`}
+              amountLabel={money(txn.amount, txn.currency)}
+              selected={detail?.id === txn.id}
+              onPress={() => void openDetail(txn)}
+            />
+          </Card>
+        ))
       )}
     </>
   );
 
-  const listBody = desktop ? (
-    <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={styles.listPad}
-      keyboardShouldPersistTaps="handled"
-    >
-      {listContent}
-    </ScrollView>
-  ) : (
-    listContent
-  );
-
-  const detailBody = detail ? (
-    <DetailPanel
-      detail={detail}
-      allTags={allTags}
-      txnTagIds={txnTagIds}
-      categoryNames={categoryNames}
-      splitCatA={splitCatA}
-      splitCatB={splitCatB}
-      setSplitCatA={setSplitCatA}
-      setSplitCatB={setSplitCatB}
-      splitMsg={splitMsg}
-      busy={busy}
-      onToggleTag={(id) => void toggleTag(id)}
-      onEqualSplit={() => void onEqualSplit()}
-      onClose={() => setDetail(null)}
-      onReview={(id) => void onReview(id)}
-    />
-  ) : (
-    <View style={styles.detailEmpty}>
-      <Text style={styles.detailEmptyGlyph}>☰</Text>
-      <Text style={styles.detailEmptyTitle}>Select a transaction</Text>
-      <Text style={styles.detailEmptyBody}>
-        Pick a row to inspect tags, notes, and splits.
-      </Text>
-    </View>
-  );
-
   if (desktop) {
     return (
-      <Screen scroll={false} flush>
-        <MasterDetail list={listBody} detail={detailBody} />
-      </Screen>
+      <MasterDetail
+        list={
+          <Screen
+            flush
+            refreshing={false}
+            onRefresh={() => void reload()}
+            contentStyle={styles.listPad}
+          >
+            {listBody}
+          </Screen>
+        }
+        detail={
+          <ScrollView
+            style={styles.detailScroll}
+            contentContainerStyle={styles.detailPad}
+            keyboardShouldPersistTaps="handled"
+          >
+            {detailBody}
+          </ScrollView>
+        }
+      />
     );
   }
 
@@ -569,26 +502,7 @@ export default function TransactionsScreen() {
       {listBody}
       <Modal visible={!!detail} animationType="slide" transparent>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            {detail ? (
-              <DetailPanel
-                detail={detail}
-                allTags={allTags}
-                txnTagIds={txnTagIds}
-                categoryNames={categoryNames}
-                splitCatA={splitCatA}
-                splitCatB={splitCatB}
-                setSplitCatA={setSplitCatA}
-                setSplitCatB={setSplitCatB}
-                splitMsg={splitMsg}
-                busy={busy}
-                onToggleTag={(id) => void toggleTag(id)}
-                onEqualSplit={() => void onEqualSplit()}
-                onClose={() => setDetail(null)}
-                onReview={(id) => void onReview(id)}
-              />
-            ) : null}
-          </View>
+          <View style={styles.modalCard}>{detailBody}</View>
         </View>
       </Modal>
     </Screen>
@@ -596,11 +510,6 @@ export default function TransactionsScreen() {
 }
 
 const styles = StyleSheet.create({
-  listPad: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xxxl,
-  },
   headerActions: { flexDirection: "row", gap: spacing.xs },
   smallBtn: { minHeight: 36, paddingVertical: 8, minWidth: 64 },
   composer: { marginBottom: spacing.md },
@@ -611,7 +520,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.input,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 10,
+    paddingVertical: 12,
     marginBottom: spacing.sm,
     backgroundColor: colors.bgInput,
     color: colors.textPrimary,
@@ -624,9 +533,47 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   msg: { ...type.footnote, color: colors.textPrimary, marginBottom: spacing.sm },
-  txnCard: { marginBottom: spacing.xs },
+  txnCard: { marginBottom: spacing.sm },
   txnMeta: { ...type.footnote, marginTop: 2 },
   reviewBtn: { minWidth: 84, minHeight: 36, paddingVertical: 8 },
+  listPad: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xxxl,
+  },
+  detailScroll: { flex: 1, backgroundColor: colors.bgElevated },
+  detailPad: { padding: spacing.xl, paddingBottom: spacing.xxxl },
+  detailInner: {},
+  detailTop: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  detailClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.bgMuted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  detailCloseText: { fontSize: 14, color: colors.textSecondary, fontWeight: "600" },
+  detailEmpty: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.xxl,
+    minHeight: 320,
+  },
+  detailEmptyGlyph: { fontSize: 36, color: colors.textTertiary, marginBottom: spacing.sm },
+  detailEmptyTitle: { ...type.title3, marginBottom: 6 },
+  detailEmptyBody: {
+    ...type.subhead,
+    textAlign: "center",
+    color: colors.textSecondary,
+    maxWidth: 260,
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: colors.overlay,
@@ -634,46 +581,10 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     backgroundColor: colors.card,
-    borderTopLeftRadius: radius.modal,
-    borderTopRightRadius: radius.modal,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    padding: spacing.lg,
     maxHeight: "88%",
-    overflow: "hidden",
   },
-  detailScroll: { flex: 1 },
-  detailPad: { padding: spacing.lg, paddingBottom: spacing.xxxl },
-  detailTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: spacing.sm,
-  },
-  detailMeta: { ...type.sectionLabel },
-  closeBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.bgMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  closeBtnText: { color: colors.textSecondary, fontSize: 13, fontWeight: "600" },
-  detailMerchant: { ...type.title1, marginBottom: 4 },
-  detailAmount: { ...type.displayAmount, marginBottom: 6 },
-  detailAccount: { ...type.footnote, color: colors.textTertiary },
-  notePlaceholder: {
-    ...type.body,
-    color: colors.textTertiary,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.divider,
-  },
-  detailEmpty: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: spacing.xl,
-  },
-  detailEmptyGlyph: { fontSize: 36, color: colors.textTertiary, marginBottom: 12 },
-  detailEmptyTitle: { ...type.title3, marginBottom: 6 },
-  detailEmptyBody: { ...type.subhead, textAlign: "center", maxWidth: 240 },
+  modalTitle: { ...type.title2, marginBottom: 4 },
 });

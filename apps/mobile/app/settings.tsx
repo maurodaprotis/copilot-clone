@@ -315,6 +315,7 @@ export default function SettingsScreen() {
         options={{
           title: "Settings",
           presentation: "modal",
+          headerShown: true,
           headerRight: () => (
             <Pressable onPress={() => router.back()} hitSlop={8}>
               <Text style={styles.close}>✕</Text>
