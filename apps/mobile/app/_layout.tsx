@@ -72,7 +72,9 @@ export default function RootLayout() {
           name="settings"
           options={{
             title: "Settings",
-            presentation: "modal",
+            presentation: "transparentModal",
+            animation: "fade",
+            contentStyle: { backgroundColor: "transparent" },
           }}
         />
         <Stack.Screen name="import" options={{ title: "Import" }} />
