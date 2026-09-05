@@ -23,7 +23,7 @@ export function SettingsDivider() {
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginBottom: spacing.lg },
+  wrap: { marginBottom: spacing.md },
   card: {
     backgroundColor: colors.bgCard,
     borderRadius: radius.lg,

@@ -17,3 +17,7 @@ export { SearchBar } from "./SearchBar";
 export { ProgressBar } from "./ProgressBar";
 export { SettingsGroup, SettingsDivider } from "./SettingsGroup";
 export { ChartSpendLine } from "./ChartSpendLine";
+export { WebSidebar } from "./WebSidebar";
+export { MasterDetail } from "./MasterDetail";
+export { DashboardGrid } from "./DashboardGrid";
+export { useIsDesktopWeb } from "./useIsDesktopWeb";
