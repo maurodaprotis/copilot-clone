@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { Stack, useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import type { CsvColumnMapping, ImportJob } from "@copilot-clone/domain";
 import { DEMO_ACCOUNT_CURRENCY, DEMO_ACCOUNT_ID } from "../src/config";
 import { listLocalAccounts } from "../src/offline/accounts";
@@ -19,7 +19,6 @@ import {
   PrimaryButton,
   Screen,
   ScreenHeader,
-  useIsDesktopWeb,
 } from "../src/ui";
 
 const SAMPLE = `date,description,amount
@@ -31,7 +30,6 @@ type Step = 1 | 2 | 3 | 4;
 
 export default function ImportScreen() {
   const router = useRouter();
-  const desktop = useIsDesktopWeb();
   const [csv, setCsv] = useState(SAMPLE);
   const [accountId, setAccountId] = useState(DEMO_ACCOUNT_ID);
   const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
@@ -155,8 +153,6 @@ export default function ImportScreen() {
     accounts.find((a) => a.id === accountId)?.name ?? "Cash ARS";
 
   return (
-    <>
-      <Stack.Screen options={{ title: "Import", headerShown: !desktop }} />
       <Screen>
         <ScreenHeader
           title="Import CSV"
@@ -354,12 +350,11 @@ export default function ImportScreen() {
 
         {msg ? <Text style={styles.msg}>{msg}</Text> : null}
       </Screen>
-    </>
   );
 }
 
 const styles = StyleSheet.create({
-  steps: { flexDirection: "row", gap: 6, marginBottom: spacing.lg },
+  steps: { flexDirection: "row", gap: 6, marginBottom: spacing.md },
   step: { flex: 1, height: 4, borderRadius: 999, backgroundColor: colors.borderSubtle },
   stepOn: { backgroundColor: colors.accentBlue },
   stepDone: { backgroundColor: "#93C5FD" },
@@ -369,7 +364,7 @@ const styles = StyleSheet.create({
     borderColor: "#C5CDD8",
     borderRadius: radius.lg,
     backgroundColor: colors.bgInput,
-    padding: spacing.xl,
+    padding: spacing.md,
     alignItems: "center",
   },
   dropIcon: {
@@ -385,7 +380,7 @@ const styles = StyleSheet.create({
   dropHint: { ...type.footnote, color: colors.textTertiary, marginBottom: spacing.md },
   csv: {
     alignSelf: "stretch",
-    minHeight: 100,
+    minHeight: 72,
     borderRadius: radius.input,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
