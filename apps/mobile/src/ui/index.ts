@@ -1,7 +1,7 @@
 export { Card, cardGap } from "./Card";
 export { EmptyState } from "./EmptyState";
 export { EmptySparkle } from "./EmptySparkle";
-export { PrimaryButton, GhostButton } from "./Button";
+export { PrimaryButton, GhostButton, IconButton } from "./Button";
 export { ScreenHeader } from "./ScreenHeader";
 export { SectionHeader } from "./SectionHeader";
 export { SectionLabel } from "./SectionLabel";

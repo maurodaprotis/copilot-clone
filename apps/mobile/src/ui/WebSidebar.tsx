@@ -40,12 +40,17 @@ const NAV: NavItem[] = [
     glyph: "•••",
     match: (p) =>
       p.includes("more") ||
-      p.includes("settings") ||
       p.includes("accounts") ||
       p.includes("import") ||
       p.includes("recurrings") ||
       p.includes("rules") ||
       p.includes("tags"),
+  },
+  {
+    label: "Settings",
+    href: "/settings",
+    glyph: "⚙",
+    match: (p) => p.includes("settings"),
   },
 ];
 
@@ -57,12 +62,9 @@ export function WebSidebar() {
     <View style={styles.rail}>
       <View style={styles.brand}>
         <View style={styles.logoMark}>
-          <Text style={styles.logoGlyph}>◆</Text>
+          <Text style={styles.logoGlyph}>✈</Text>
         </View>
-        <View>
-          <Text style={styles.brandTitle}>copilot</Text>
-          <Text style={styles.brandSub}>MONEY</Text>
-        </View>
+        <Text style={styles.brandTitle}>copilot</Text>
       </View>
 
       <View style={styles.nav}>
@@ -84,16 +86,6 @@ export function WebSidebar() {
           );
         })}
       </View>
-
-      <View style={styles.footer}>
-        <Pressable
-          style={styles.settingsBtn}
-          onPress={() => router.push("/settings" as never)}
-        >
-          <Text style={styles.settingsGlyph}>⚙</Text>
-          <Text style={styles.settingsLabel}>Settings</Text>
-        </Pressable>
-      </View>
     </View>
   );
 }
@@ -105,9 +97,8 @@ const styles = StyleSheet.create({
     borderRightWidth: StyleSheet.hairlineWidth,
     borderRightColor: colors.borderSubtle,
     paddingTop: spacing.lg,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.xl,
     paddingHorizontal: spacing.sm,
-    justifyContent: "flex-start",
   },
   brand: {
     flexDirection: "row",
@@ -117,29 +108,28 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   logoMark: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: colors.navy,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: colors.accentBlueSoft,
     alignItems: "center",
     justifyContent: "center",
   },
-  logoGlyph: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  logoGlyph: {
+    color: colors.accentBlue,
+    fontSize: 13,
+    fontWeight: "700",
+    transform: [{ rotate: "-28deg" }],
+  },
   brandTitle: {
-    fontSize: 15,
+    fontSize: 18,
     fontWeight: "700",
     color: colors.textPrimary,
     fontFamily,
-    lineHeight: 18,
+    letterSpacing: -0.4,
+    lineHeight: 22,
   },
-  brandSub: {
-    fontSize: 9,
-    fontWeight: "700",
-    letterSpacing: 1.2,
-    color: colors.textTertiary,
-    fontFamily,
-  },
-  nav: { gap: 2, flex: 1 },
+  nav: { gap: 2 },
   item: {
     flexDirection: "row",
     alignItems: "center",
@@ -164,20 +154,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   itemLabelActive: { color: colors.accentBlue },
-  footer: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.borderSubtle,
-    paddingTop: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  settingsBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: radius.md,
-  },
-  settingsGlyph: { width: 22, textAlign: "center", fontSize: 15, color: colors.textTertiary },
-  settingsLabel: { ...type.callout, color: colors.textSecondary, fontWeight: "600" },
 });

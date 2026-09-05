@@ -175,10 +175,7 @@ export default function CashFlowScreen() {
 
   return (
     <Screen refreshing={loading} onRefresh={() => void reload()}>
-      <ScreenHeader
-        title="Cash Flow"
-        subtitle={`${source === "api" ? "Live" : "Local"} · transfers omitted`}
-      />
+      <ScreenHeader title="Cash Flow" />
 
       <View style={styles.monthRow}>
         <Pressable

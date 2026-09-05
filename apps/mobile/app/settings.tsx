@@ -124,7 +124,7 @@ export default function SettingsScreen() {
         <View style={styles.row}>
           <View style={styles.rowText}>
             <Text style={styles.rowLabel}>Enable budgeting</Text>
-            <Text style={styles.rowDesc}>Set monthly budgets for categories</Text>
+            <Text style={styles.rowDesc}>Set monthly budgets for your categories</Text>
           </View>
           <Toggle value={budgetingOn} onChange={setBudgetingOn} />
         </View>
@@ -132,9 +132,21 @@ export default function SettingsScreen() {
         <View style={styles.row}>
           <View style={styles.rowText}>
             <Text style={styles.rowLabel}>Enable rollover</Text>
-            <Text style={styles.rowDesc}>Allow budgets across months</Text>
+            <Text style={styles.rowDesc}>Carry leftover budget into the next month</Text>
           </View>
           <Toggle value={rolloverOn} onChange={setRolloverOn} />
+        </View>
+      </SettingsGroup>
+
+      <SettingsGroup label="Tags">
+        <View style={styles.row}>
+          <View style={styles.rowText}>
+            <Text style={styles.rowLabel}>Manage tags</Text>
+            <Text style={styles.rowDesc}>Organize transactions with tags</Text>
+          </View>
+          <Pressable style={styles.tagChip} onPress={() => router.push("/tags" as never)}>
+            <Text style={styles.tagChipText}>0 tags ▾</Text>
+          </Pressable>
         </View>
       </SettingsGroup>
 
@@ -142,7 +154,7 @@ export default function SettingsScreen() {
         <View style={[styles.row, styles.col]}>
           <View style={styles.rowText}>
             <Text style={styles.rowLabel}>Reporting currency</Text>
-            <Text style={styles.rowDesc}>USD-first · ARS supported</Text>
+            <Text style={styles.rowDesc}>Amounts convert into this currency</Text>
           </View>
           <View style={styles.pills}>
             {["USD", "ARS", "EUR"].map((c) => (
@@ -161,14 +173,14 @@ export default function SettingsScreen() {
           <View style={styles.rowText}>
             <Text style={styles.rowLabel}>Default FX series</Text>
             <Text style={styles.rowDesc}>
-              Used when converting to reporting currency
+              Official, parallel, or your custom book for conversions
             </Text>
           </View>
           <View style={styles.pills}>
             {SERIES.map((s) => (
               <Chip
                 key={s}
-                label={s}
+                label={s.charAt(0).toUpperCase() + s.slice(1)}
                 tone="filled"
                 selected={settings?.default_fx_series === s}
                 onPress={() => void saveSettings({ default_fx_series: s })}
@@ -243,7 +255,7 @@ export default function SettingsScreen() {
           {SERIES.map((s) => (
             <Chip
               key={s}
-              label={s}
+              label={s.charAt(0).toUpperCase() + s.slice(1)}
               tone="filled"
               selected={book === s}
               onPress={() => setBook(s)}
@@ -405,4 +417,13 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   stub: { padding: spacing.lg },
+  tagChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    backgroundColor: colors.bgCard,
+  },
+  tagChipText: { ...type.callout, fontSize: 13, fontWeight: "600", color: colors.textSecondary },
 });

@@ -31,16 +31,19 @@ export function TxnRow({
 }: Props) {
   const content = (
     <View style={[styles.row, selected && styles.selected]}>
+      {selected ? <View style={styles.selBar} /> : null}
       {leading ?? <View style={styles.glyph} />}
       <View style={styles.mid}>
-        <Text style={styles.merchant} numberOfLines={1}>
-          {merchant}
-        </Text>
-        {account ? (
-          <Text style={styles.account} numberOfLines={1}>
-            {account}
+        <View style={styles.titleLine}>
+          <Text style={styles.merchant} numberOfLines={1}>
+            {merchant}
           </Text>
-        ) : null}
+          {account ? (
+            <Text style={styles.account} numberOfLines={1}>
+              {account}
+            </Text>
+          ) : null}
+        </View>
       </View>
       {categoryName ? (
         <CategoryPill emoji={categoryEmoji} name={categoryName} />
@@ -64,23 +67,42 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    minHeight: 60,
+    paddingVertical: 7,
+    paddingHorizontal: spacing.md,
+    minHeight: 44,
+    position: "relative",
   },
   selected: {
     backgroundColor: colors.bgSelection,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.bgSelectionBar,
+  },
+  selBar: {
+    position: "absolute",
+    left: 0,
+    top: 4,
+    bottom: 4,
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: colors.bgSelectionBar,
   },
   pressed: { backgroundColor: colors.accentBlueSoft },
   glyph: {
-    width: 32,
-    height: 32,
+    width: 28,
+    height: 28,
     borderRadius: radius.pill,
     backgroundColor: colors.bgMuted,
   },
   mid: { flex: 1, minWidth: 0 },
-  merchant: { ...type.headline },
-  account: { ...type.footnote, marginTop: 2, color: colors.textTertiary },
+  titleLine: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 8,
+    flexWrap: "nowrap",
+  },
+  merchant: { ...type.headline, fontSize: 14, lineHeight: 18, flexShrink: 1 },
+  account: {
+    ...type.footnote,
+    fontSize: 12,
+    color: colors.textTertiary,
+    flexShrink: 2,
+  },
 });

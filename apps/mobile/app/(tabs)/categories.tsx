@@ -162,10 +162,7 @@ export default function CategoriesScreen() {
 
   return (
     <Screen refreshing={loading} onRefresh={() => void reload()}>
-      <ScreenHeader
-        title="Categories"
-        subtitle={`${yearMonth} · USD budgets · ${source === "api" ? "Live" : "Local"}`}
-      />
+      <ScreenHeader title="Categories" />
 
       <Card style={styles.summary}>
         <View style={styles.summaryCell}>

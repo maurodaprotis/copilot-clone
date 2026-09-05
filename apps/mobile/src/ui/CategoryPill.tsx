@@ -25,8 +25,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.categoryPillBg,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    maxWidth: 140,
+    paddingVertical: 3,
+    maxWidth: 120,
   },
   emoji: { fontSize: 11 },
   text: {

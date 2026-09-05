@@ -56,6 +56,46 @@ export function GhostButton(props: Omit<Props, "variant">) {
   return <PrimaryButton {...props} variant="ghost" />;
 }
 
+type IconBtnProps = {
+  glyph: string;
+  onPress: () => void;
+  accessibilityLabel: string;
+  loading?: boolean;
+  disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
+};
+
+/** Compact circular header action (Sync / download style). */
+export function IconButton({
+  glyph,
+  onPress,
+  accessibilityLabel,
+  loading,
+  disabled,
+  style,
+}: IconBtnProps) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      disabled={disabled || loading}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.iconBtn,
+        (disabled || loading) && styles.disabled,
+        pressed && !disabled && { opacity: 0.75 },
+        style,
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color={colors.textSecondary} />
+      ) : (
+        <Text style={styles.iconGlyph}>{glyph}</Text>
+      )}
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   base: {
     paddingHorizontal: spacing.lg,
@@ -67,6 +107,22 @@ const styles = StyleSheet.create({
   },
   label: { ...type.callout, fontWeight: "600" },
   disabled: { opacity: 0.5 },
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconGlyph: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    fontWeight: "600",
+    lineHeight: 18,
+  },
 });
 
 const variants = {

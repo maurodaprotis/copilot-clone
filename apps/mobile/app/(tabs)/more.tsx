@@ -1,15 +1,15 @@
 import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { colors, radius, spacing, type } from "../../src/theme";
+import { colors, spacing } from "../../src/theme";
 import { Card, ListRow, Screen, ScreenHeader, SectionLabel } from "../../src/ui";
 
-const ITEMS: { title: string; subtitle?: string; href: string; icon: string; section: string }[] = [
-  { section: "Money", title: "Accounts", subtitle: "Balances · net worth", href: "/accounts", icon: "🏦" },
-  { section: "Money", title: "Recurring", subtitle: "Bills · income · templates", href: "/recurrings", icon: "🔁" },
-  { section: "Money", title: "Investments", subtitle: "Coming soon", href: "/accounts", icon: "📈" },
-  { section: "Data", title: "Import CSV", subtitle: "Bank CSV → needs review", href: "/import", icon: "📄" },
-  { section: "Data", title: "Settings", subtitle: "Currency · FX · locale", href: "/settings", icon: "⚙️" },
-  { section: "Support", title: "About / Support", subtitle: "Copilot Money clone", href: "/settings", icon: "ℹ️" },
+const ITEMS: { title: string; href: string; icon: string; section: string }[] = [
+  { section: "Money", title: "Accounts", href: "/accounts", icon: "🏦" },
+  { section: "Money", title: "Recurring", href: "/recurrings", icon: "🔁" },
+  { section: "Money", title: "Investments", href: "/accounts", icon: "📈" },
+  { section: "Data", title: "Import CSV", href: "/import", icon: "📄" },
+  { section: "Data", title: "Settings", href: "/settings", icon: "⚙️" },
+  { section: "Support", title: "About / Support", href: "/settings", icon: "ℹ️" },
 ];
 
 export default function MoreScreen() {
@@ -26,7 +26,6 @@ export default function MoreScreen() {
               <View key={item.title}>
                 <ListRow
                   title={item.title}
-                  subtitle={item.subtitle}
                   chevron
                   left={
                     <View style={styles.iconCircle}>
