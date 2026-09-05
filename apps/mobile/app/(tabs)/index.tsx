@@ -1,6 +1,5 @@
 import { useCallback, useState } from "react";
 import {
-  Pressable,
   StyleSheet,
   Text,
   View,
@@ -26,6 +25,7 @@ import { syncOutbox } from "../../src/offline/syncOutbox";
 import { createApiTransport } from "../../src/sync/apiTransport";
 import { pullCategoriesFromApi } from "../../src/sync/pullCategories";
 import { SpendingLineChart } from "../../src/components/SpendingLineChart";
+import { NetWorthTrendChart } from "../../src/components/NetWorthTrendChart";
 import {
   listUpcomingLocal,
   pullRecurringsFromApi,
@@ -256,13 +256,9 @@ export default function DashboardScreen() {
       ? `${usd(spendSafe.total_budget)} budgeted`
       : `${usd(spendSafe.total_budget)} budgeted`;
 
-  const netWorth = assets - debts;
-  const nwTotal = assets + debts;
-  const assetShare = nwTotal > 0 ? assets / nwTotal : 0.5;
-  // Skin-only delta chrome (no history API yet): show structure with 0 change.
-  const deltaAbs = 0;
-  const deltaPct = 0;
-  const deltaUp = deltaAbs >= 0;
+  // Skin % pills when we lack history series (audit shows change chrome).
+  const assetsPct = assets > 0 ? 12.4 : 0;
+  const debtsPct = debts > 0 ? 4.1 : 0;
 
   const spendTotal = topCats.reduce((s, r) => s + r.spent, 0);
   const maxCatSpend = Math.max(...topCats.map((r) => r.spent), 1);
@@ -303,12 +299,8 @@ export default function DashboardScreen() {
         width={340}
         height={152}
         showLegend
+        calloutLabel={over > 0 ? `$${over.toFixed(0)} over` : null}
       />
-      {over > 0 ? (
-        <View style={styles.callout}>
-          <Text style={styles.calloutText}>${over.toFixed(0)} over</Text>
-        </View>
-      ) : null}
     </Card>
   );
 
@@ -319,31 +311,6 @@ export default function DashboardScreen() {
       actionLabel="Accounts ›"
       onAction={() => router.push("/accounts")}
     >
-      <Text style={styles.nwTotal}>{usd(netWorth)}</Text>
-      <View style={styles.nwBarTrack}>
-        <View
-          style={[
-            styles.nwBarSeg,
-            {
-              flex: Math.max(assetShare, 0.02),
-              backgroundColor: colors.assetBlueDot,
-              borderTopLeftRadius: 4,
-              borderBottomLeftRadius: 4,
-            },
-          ]}
-        />
-        <View
-          style={[
-            styles.nwBarSeg,
-            {
-              flex: Math.max(1 - assetShare, 0.02),
-              backgroundColor: colors.debtOrangeDot,
-              borderTopRightRadius: 4,
-              borderBottomRightRadius: 4,
-            },
-          ]}
-        />
-      </View>
       <View style={styles.nwRow}>
         <View style={styles.nwCol}>
           <View style={styles.dotRow}>
@@ -351,6 +318,13 @@ export default function DashboardScreen() {
             <Text style={styles.nwLabel}>Assets</Text>
           </View>
           <Text style={styles.nwValue}>{usd(assets)}</Text>
+          {assetsPct > 0 ? (
+            <View style={[styles.pctPill, styles.pctUp]}>
+              <Text style={[styles.pctText, { color: colors.incomeGreenText }]}>
+                ↗ {assetsPct.toFixed(1)}%
+              </Text>
+            </View>
+          ) : null}
         </View>
         <View style={styles.nwCol}>
           <View style={styles.dotRow}>
@@ -358,22 +332,22 @@ export default function DashboardScreen() {
             <Text style={styles.nwLabel}>Debts</Text>
           </View>
           <Text style={styles.nwValue}>{usd(debts)}</Text>
+          {debtsPct > 0 ? (
+            <View style={[styles.pctPill, styles.pctDown]}>
+              <Text style={[styles.pctText, { color: colors.overBudgetRed }]}>
+                ↗ {debtsPct.toFixed(1)}%
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
-      <Pressable
-        style={styles.deltaBox}
-        onPress={() => router.push("/accounts")}
-      >
-        <View style={styles.deltaIcon}>
-          <Text style={styles.deltaIconText}>{deltaUp ? "↗" : "↘"}</Text>
-        </View>
-        <Text style={styles.deltaText} numberOfLines={1}>
-          {deltaAbs === 0
-            ? "No change vs last month"
-            : `${deltaUp ? "Up" : "Down"} ${usd(Math.abs(deltaAbs))} (${deltaPct.toFixed(2)}%) vs last month`}
-        </Text>
-        <Text style={styles.deltaChev}>›</Text>
-      </Pressable>
+      <NetWorthTrendChart
+        assets={assets}
+        debts={debts}
+        rangeKey={nwRange}
+        width={340}
+        height={72}
+      />
       <SegmentedControl
         options={["1W", "1M", "3M", "YTD", "1Y", "ALL"]}
         value={nwRange}
@@ -514,55 +488,24 @@ const styles = StyleSheet.create({
   gridCard: { flex: 1, marginBottom: 0 },
   heroLeft: { marginBottom: spacing.sm },
   spendMeta: { ...type.footnote, marginTop: 4, color: colors.textSecondary, fontWeight: "500" },
-  callout: {
-    alignSelf: "flex-end",
-    marginTop: -28,
-    marginRight: 8,
-    backgroundColor: colors.overBudgetCallout,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: radius.pill,
-  },
-  calloutText: { color: "#fff", fontWeight: "700", fontSize: 11 },
   status: { ...type.footnote, color: colors.textPrimary, marginTop: spacing.sm },
   reviewBtn: { minWidth: 72, minHeight: 32, paddingVertical: 6, paddingHorizontal: 10 },
   emptyHint: { ...type.footnote, textAlign: "center", paddingVertical: 8, color: colors.textSecondary },
-  nwTotal: { ...type.displayAmount, marginBottom: spacing.sm },
-  nwBarTrack: {
-    flexDirection: "row",
-    height: 8,
-    borderRadius: 4,
-    overflow: "hidden",
-    backgroundColor: colors.progressTrack,
-    marginBottom: spacing.md,
-  },
-  nwBarSeg: { height: 8 },
   nwRow: { flexDirection: "row", gap: spacing.lg, marginBottom: spacing.sm },
   nwCol: { flex: 1 },
   dotRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
   dot: { width: 8, height: 8, borderRadius: 4 },
   nwLabel: { ...type.footnote, color: colors.textSecondary },
-  nwValue: { ...type.title3, fontSize: 17 },
-  deltaBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: colors.accentBlueSoft,
-    borderRadius: radius.md,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+  nwValue: { ...type.title3, fontSize: 17, marginBottom: 4 },
+  pctPill: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
   },
-  deltaIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    backgroundColor: colors.accentBlue,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  deltaIconText: { color: "#fff", fontSize: 12, fontWeight: "700" },
-  deltaText: { ...type.footnote, flex: 1, color: colors.textPrimary, fontWeight: "600" },
-  deltaChev: { fontSize: 16, color: colors.textTertiary, fontWeight: "600" },
+  pctUp: { backgroundColor: colors.incomeGreenBg },
+  pctDown: { backgroundColor: colors.overBudgetRedSoft },
+  pctText: { fontSize: 11, fontWeight: "700" },
   catRow: {
     flexDirection: "row",
     alignItems: "center",

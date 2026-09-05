@@ -10,6 +10,8 @@ type Props = {
   width?: number;
   /** When true, show Spending / Budget legend above the chart (Copilot web). */
   showLegend?: boolean;
+  /** Copilot axis callout near the latest spend point, e.g. "$X over". */
+  calloutLabel?: string | null;
 };
 
 /**
@@ -23,6 +25,7 @@ export function SpendingLineChart({
   height = 160,
   width = 320,
   showLegend = true,
+  calloutLabel,
 }: Props) {
   const n = Math.max(cumulative.length, pace.length, 1);
   const today =
@@ -31,13 +34,14 @@ export function SpendingLineChart({
   const visibleCum = cumulative.slice(0, today + 1);
   const maxY = Math.max(...pace, ...visibleCum, 1);
   const padX = 4;
+  const padTop = calloutLabel ? 22 : 6;
   const padY = 6;
   const innerW = width - padX * 2;
-  const innerH = height - padY * 2;
+  const innerH = height - padTop - padY;
 
   function xy(i: number, value: number): { x: number; y: number } {
     const x = padX + (n <= 1 ? 0 : (i / (n - 1)) * innerW);
-    const y = padY + innerH - (value / maxY) * innerH;
+    const y = padTop + innerH - (value / maxY) * innerH;
     return { x, y };
   }
 
@@ -60,7 +64,7 @@ export function SpendingLineChart({
   if (visibleCum.length > 0) {
     const first = xy(0, visibleCum[0] ?? 0);
     const last = xy(visibleCum.length - 1, visibleCum[visibleCum.length - 1] ?? 0);
-    const baseY = padY + innerH;
+    const baseY = padTop + innerH;
     areaD =
       `M ${first.x.toFixed(1)} ${baseY.toFixed(1)} ` +
       visibleCum
@@ -76,6 +80,16 @@ export function SpendingLineChart({
     visibleCum.length > 0
       ? xy(visibleCum.length - 1, visibleCum[visibleCum.length - 1] ?? 0)
       : null;
+
+  // Axis-adjacent callout: sit just above the tip, clamped inside the chart.
+  const calloutW = calloutLabel ? Math.min(110, Math.max(72, calloutLabel.length * 7.2)) : 0;
+  const calloutH = 20;
+  let calloutX = 0;
+  let calloutY = 0;
+  if (lastPt && calloutLabel) {
+    calloutX = Math.min(Math.max(lastPt.x - calloutW / 2, 2), width - calloutW - 2);
+    calloutY = Math.max(2, lastPt.y - calloutH - 8);
+  }
 
   return (
     <View style={styles.wrap}>
@@ -97,6 +111,16 @@ export function SpendingLineChart({
       ) : null}
       <View style={{ width, height, alignSelf: "center" }}>
         <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+          {/* Soft baseline (Copilot axis treatment) */}
+          <line
+            x1={padX}
+            y1={padTop + innerH}
+            x2={width - padX}
+            y2={padTop + innerH}
+            stroke={colors.borderSubtle}
+            strokeWidth={1}
+            strokeDasharray="3 3"
+          />
           {areaD ? (
             <path d={areaD} fill={spendColor} opacity={0.12} />
           ) : null}
@@ -124,6 +148,30 @@ export function SpendingLineChart({
               stroke="#fff"
               strokeWidth={1.5}
             />
+          ) : null}
+          {lastPt && calloutLabel ? (
+            <g>
+              <rect
+                x={calloutX}
+                y={calloutY}
+                rx={10}
+                ry={10}
+                width={calloutW}
+                height={calloutH}
+                fill={colors.overBudgetCallout}
+              />
+              <text
+                x={calloutX + calloutW / 2}
+                y={calloutY + 13.5}
+                textAnchor="middle"
+                fill="#fff"
+                fontSize="11"
+                fontWeight="700"
+                fontFamily="system-ui, -apple-system, sans-serif"
+              >
+                {calloutLabel}
+              </text>
+            </g>
           ) : null}
         </svg>
       </View>
