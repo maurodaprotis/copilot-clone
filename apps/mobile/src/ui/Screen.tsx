@@ -63,12 +63,12 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bgPage },
   pad: {
     paddingHorizontal: layout.screenPadding,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xxxl,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xxl,
   },
   padWeb: {
     paddingHorizontal: layout.webContentPadding,
-    paddingTop: spacing.lg,
+    paddingTop: spacing.md,
     maxWidth: layout.maxContentWidth,
     width: "100%",
     alignSelf: "center",

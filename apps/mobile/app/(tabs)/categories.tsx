@@ -35,7 +35,7 @@ function BudgetBar({ spent, budget }: { spent: number; budget: number }) {
   const pct = budget <= 0 ? (spent > 0 ? 1 : 0) : spent / budget;
   const color =
     pct > 1 ? colors.overBudgetRed : pct > 0.8 ? colors.warning : colors.progressFill;
-  return <ProgressBar progress={pct} color={color} />;
+  return <ProgressBar progress={pct} color={color} height={4} />;
 }
 
 export default function CategoriesScreen() {
@@ -146,44 +146,45 @@ export default function CategoriesScreen() {
         </Card>
       ) : null}
 
-      {groups.map((g) => (
-        <View key={g.id} style={styles.group}>
-          <Text style={styles.groupTitle}>{g.name}</Text>
-          {g.rows.map((row) => (
-            <Card key={row.category.id} padded={false} style={styles.rowCard}>
-              <Pressable
-                style={styles.row}
-                onPress={() => {
-                  setEditRow(row);
-                  setEditAmount(String(row.budgeted_amount));
-                  setMsg(null);
-                }}
-              >
-                <Text style={styles.emoji}>{row.category.emoji}</Text>
-                <View style={{ flex: 1 }}>
-                  <View style={styles.rowTop}>
-                    <Text style={styles.catName}>
-                      {row.category.name}
-                      {row.category.exclude_from_budget ? " · excluded" : ""}
-                    </Text>
-                    <Text style={styles.amounts}>
-                      {usd(row.spent)}
-                      <Text style={styles.amountsMuted}>
-                        {" "}
-                        / {usd(row.effective)}
+      {groups.map((g) =>
+        g.rows.length === 0 ? null : (
+          <View key={g.id} style={styles.group}>
+            <Text style={styles.groupTitle}>{g.name}</Text>
+            <Card padded={false} style={styles.groupCard}>
+              {g.rows.map((row, idx) => (
+                <Pressable
+                  key={row.category.id}
+                  style={[styles.row, idx > 0 && styles.rowBorder]}
+                  onPress={() => {
+                    setEditRow(row);
+                    setEditAmount(String(row.budgeted_amount));
+                    setMsg(null);
+                  }}
+                >
+                  <Text style={styles.emoji}>{row.category.emoji}</Text>
+                  <View style={styles.rowMid}>
+                    <View style={styles.rowTop}>
+                      <Text style={styles.catName} numberOfLines={1}>
+                        {row.category.name}
+                        {row.category.exclude_from_budget ? " · excluded" : ""}
                       </Text>
-                    </Text>
+                      <Text style={styles.amounts}>
+                        {usd(row.spent)}
+                        <Text style={styles.amountsMuted}>
+                          {" "}
+                          / {usd(row.effective)}
+                        </Text>
+                      </Text>
+                    </View>
+                    <BudgetBar spent={row.spent} budget={row.effective} />
                   </View>
-                  <BudgetBar spent={row.spent} budget={row.effective} />
-                  <Text style={styles.remaining}>
-                    {usd(row.remaining)} left · tap to edit
-                  </Text>
-                </View>
-              </Pressable>
+                  <Text style={styles.chev}>›</Text>
+                </Pressable>
+              ))}
             </Card>
-          ))}
-        </View>
-      ))}
+          </View>
+        ),
+      )}
 
       <Modal visible={!!editRow} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
@@ -227,8 +228,8 @@ const styles = StyleSheet.create({
   summary: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: spacing.lg,
-    paddingVertical: spacing.md,
+    marginBottom: spacing.cardGap,
+    paddingVertical: spacing.sm,
   },
   summaryCell: { flex: 1, alignItems: "center" },
   summaryDivider: {
@@ -236,35 +237,41 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     backgroundColor: colors.border,
   },
-  summaryLabel: { ...type.caption, marginBottom: 4 },
+  summaryLabel: { ...type.caption, marginBottom: 2 },
   summaryValue: { ...type.title3 },
   msg: { ...type.footnote, marginBottom: spacing.sm, color: colors.text },
-  group: { marginBottom: spacing.md },
-  groupTitle: { ...type.caption, marginBottom: spacing.sm, marginLeft: 4 },
-  rowCard: { marginBottom: spacing.sm },
+  group: { marginBottom: spacing.cardGap },
+  groupTitle: {
+    ...type.sectionLabel,
+    marginBottom: 6,
+    marginLeft: 4,
+    color: colors.textTertiary,
+  },
+  groupCard: { marginBottom: 0 },
+  rowBorder: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.borderHairline,
+  },
+  rowMid: { flex: 1, minWidth: 0, gap: 4 },
+  chev: { color: colors.textTertiary, fontSize: 18, fontWeight: "300", marginLeft: 2 },
   row: {
     flexDirection: "row",
+    alignItems: "center",
     gap: spacing.sm,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    minHeight: 52,
   },
-  emoji: { fontSize: 22, width: 28, textAlign: "center", marginTop: 2 },
+  emoji: { fontSize: 18, width: 24, textAlign: "center" },
   rowTop: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 6,
+    alignItems: "center",
     gap: spacing.sm,
   },
   catName: { ...type.headline, flex: 1 },
   amounts: { ...type.callout, fontWeight: "700", color: colors.text },
   amountsMuted: { color: colors.textSecondary, fontWeight: "500" },
-  remaining: { ...type.footnote, marginTop: 6 },
-  barTrack: {
-    height: 6,
-    backgroundColor: colors.bgMuted,
-    borderRadius: radius.pill,
-    overflow: "hidden",
-  },
-  barFill: { height: 6, borderRadius: radius.pill },
   modalBackdrop: {
     flex: 1,
     backgroundColor: colors.overlay,

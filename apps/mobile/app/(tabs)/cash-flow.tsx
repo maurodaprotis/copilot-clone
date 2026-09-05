@@ -86,7 +86,7 @@ export default function CashFlowScreen() {
         options={["1M", "3M", "YTD", "1Y"]}
         value="1M"
         onChange={() => undefined}
-        style={{ marginBottom: spacing.md }}
+        style={{ marginBottom: spacing.sm }}
       />
 
       <Card style={styles.hero}>
@@ -104,6 +104,8 @@ export default function CashFlowScreen() {
             vs {data.prior.year_month}: {usd(data.net_delta)} (
             {pct(data.net_delta_pct)})
           </Text>
+        ) : !loading ? (
+          <Text style={styles.heroCmp}>Import or sync to see cash flow</Text>
         ) : null}
       </Card>
 
@@ -141,28 +143,28 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   chip: {
     backgroundColor: colors.bgCard,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderRadius: radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
   chipText: { ...type.footnote, fontWeight: "600", color: colors.text },
   monthLabel: { ...type.headline },
-  hero: { alignItems: "center", marginBottom: spacing.md, paddingVertical: spacing.xl },
-  heroLabel: { ...type.caption, marginBottom: spacing.xs },
-  heroValue: { ...type.moneyHero },
-  heroCmp: { ...type.subhead, marginTop: spacing.sm },
+  hero: { alignItems: "center", marginBottom: spacing.sm, paddingVertical: spacing.md },
+  heroLabel: { ...type.caption, marginBottom: 2 },
+  heroValue: { ...type.moneyHero, fontSize: 28, lineHeight: 34 },
+  heroCmp: { ...type.footnote, marginTop: spacing.xs },
   cards: { flexDirection: "row", gap: spacing.sm },
-  statCard: { flex: 1 },
+  statCard: { flex: 1, paddingVertical: spacing.md },
   incomeCard: {},
   spendCard: {},
-  cardLabel: { ...type.caption, marginBottom: 4 },
+  cardLabel: { ...type.caption, marginBottom: 2 },
   cardValue: { ...type.title2 },
-  cardHint: { ...type.footnote, marginTop: 6 },
-  rules: { ...type.footnote, marginTop: spacing.lg, lineHeight: 18 },
+  cardHint: { ...type.footnote, marginTop: 4 },
+  rules: { ...type.footnote, marginTop: spacing.md, lineHeight: 16 },
 });
