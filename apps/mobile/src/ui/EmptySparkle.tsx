@@ -57,7 +57,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#EEF5FF",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
     position: "relative",
   },
   sparkle: {
@@ -70,10 +70,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: colors.sparkleBlue,
   },
-  d1: { top: 18, left: 28, width: 5, height: 5 },
-  d2: { top: 32, right: 22, width: 4, height: 4, opacity: 0.7 },
-  d3: { bottom: 24, left: 22, width: 3, height: 3 },
-  d4: { bottom: 36, right: 30, width: 6, height: 6, opacity: 0.5 },
+  d1: { top: 12, left: 18, width: 4, height: 4 },
+  d2: { top: 20, right: 14, width: 3, height: 3, opacity: 0.7 },
+  d3: { bottom: 14, left: 14, width: 3, height: 3 },
+  d4: { bottom: 22, right: 18, width: 5, height: 5, opacity: 0.5 },
   title: { ...type.title3, textAlign: "center", marginBottom: spacing.xs },
   body: {
     ...type.footnote,

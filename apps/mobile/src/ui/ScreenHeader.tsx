@@ -41,8 +41,8 @@ export function ScreenHeader({
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginBottom: spacing.md },
-  wrapDense: { marginBottom: spacing.sm },
+  wrap: { marginBottom: spacing.sm },
+  wrapDense: { marginBottom: spacing.xs },
   row: {
     flexDirection: "row",
     alignItems: "center",
