@@ -142,7 +142,7 @@ export default function SettingsScreen() {
         <View style={styles.row}>
           <View style={styles.rowText}>
             <Text style={styles.rowLabel}>Manage tags</Text>
-            <Text style={styles.rowDesc}>Organize transactions with tags</Text>
+            <Text style={styles.rowDesc}>Use tags to group together any transactions</Text>
           </View>
           <Pressable style={styles.tagChip} onPress={() => router.push("/tags" as never)}>
             <Text style={styles.tagChipText}>0 tags ▾</Text>

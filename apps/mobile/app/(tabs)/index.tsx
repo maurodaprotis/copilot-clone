@@ -300,8 +300,8 @@ export default function DashboardScreen() {
                   : (spendSafe.total_budget * i) / (arr.length - 1),
               )
         }
-        width={300}
-        height={148}
+        width={340}
+        height={152}
         showLegend
       />
       {over > 0 ? (
