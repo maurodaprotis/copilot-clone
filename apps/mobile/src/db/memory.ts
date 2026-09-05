@@ -25,25 +25,47 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
     const s = sql.replace(/\s+/g, " ").trim();
 
     if (s.startsWith("INSERT INTO transactions")) {
-      const row: Row = {
-        id: p[0] as string,
-        account_id: p[1] as string,
-        category_id: p[2] as string | null,
-        amount: p[3] as number,
-        currency: p[4] as string,
-        amount_account: p[5] as number,
-        amount_reporting: p[6] as number,
-        type: "regular",
-        is_refund: 0,
-        review_status: "needs_review",
-        posted_at: p[7] as string,
-        note: p[8] as string | null,
-        transfer_pair_id: null,
-        fingerprint: p[9] as string,
-        synced: 0,
-        created_at: p[10] as string,
-        updated_at: p[11] as string,
-      };
+      // Support legacy (type hardcoded in SQL) and web-outbox (type as bind param).
+      const withTypeParam = p.length >= 14;
+      const row: Row = withTypeParam
+        ? {
+            id: p[0] as string,
+            account_id: p[1] as string,
+            category_id: p[2] as string | null,
+            amount: p[3] as number,
+            currency: p[4] as string,
+            amount_account: p[5] as number,
+            amount_reporting: p[6] as number,
+            type: (p[7] as string) || "regular",
+            is_refund: 0,
+            review_status: "needs_review",
+            posted_at: p[8] as string,
+            note: (p[10] as string | null) ?? (p[9] as string | null),
+            transfer_pair_id: null,
+            fingerprint: p[11] as string,
+            synced: 0,
+            created_at: p[12] as string,
+            updated_at: p[13] as string,
+          }
+        : {
+            id: p[0] as string,
+            account_id: p[1] as string,
+            category_id: p[2] as string | null,
+            amount: p[3] as number,
+            currency: p[4] as string,
+            amount_account: p[5] as number,
+            amount_reporting: p[6] as number,
+            type: "regular",
+            is_refund: 0,
+            review_status: "needs_review",
+            posted_at: p[7] as string,
+            note: p[8] as string | null,
+            transfer_pair_id: null,
+            fingerprint: p[9] as string,
+            synced: 0,
+            created_at: p[10] as string,
+            updated_at: p[11] as string,
+          };
       tables.transactions.set(String(row.id), row);
       return { changes: 1 };
     }
