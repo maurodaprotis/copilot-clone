@@ -546,19 +546,6 @@ export default function TransactionsScreen() {
 
 const styles = StyleSheet.create({
   headerActions: { flexDirection: "row", gap: spacing.xs },
-  syncChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    backgroundColor: colors.bgMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  syncChipText: {
-    ...type.captionEmphasized,
-    color: colors.textSecondary,
-    fontSize: 13,
-  },
   smallBtn: { minHeight: 36, paddingVertical: 8, minWidth: 64 },
   composer: { marginBottom: spacing.md },
   composerTitle: { ...type.headline, marginBottom: spacing.sm },
