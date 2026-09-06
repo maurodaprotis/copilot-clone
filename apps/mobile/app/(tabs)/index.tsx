@@ -12,6 +12,7 @@ import {
   isLiabilityAccount,
 } from "@copilot-clone/domain";
 import {
+  listAllTransactions,
   listToReview,
   type LocalTransaction,
 } from "../../src/offline/queries";
@@ -138,6 +139,8 @@ function hexToRgba(hex: string, alpha: number): string {
 export default function DashboardScreen() {
   const router = useRouter();
   const [items, setItems] = useState<LocalTransaction[]>([]);
+  /** Intelligence unlock CTA count — not 1:1 with Not reviewed inbox (Phase 2). */
+  const [unlockCount, setUnlockCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -156,19 +159,32 @@ export default function DashboardScreen() {
 
       const spendP = fetchSpendingLine(ym);
       const reviewP = listToReview().catch(() => [] as LocalTransaction[]);
+      const allTxnP = listAllTransactions().catch(() => [] as LocalTransaction[]);
       const accountsP = getAccountsOverview().catch(() => null);
       const topCatsApiP = fetchTopCategoriesFromApi(ym);
       const overviewP = getCategoryBudgetOverview(ym).catch(() => null);
 
-      const [line, rows, accounts, topFromApi, overview] = await Promise.all([
+      const [line, rows, allTxns, accounts, topFromApi, overview] = await Promise.all([
         spendP,
         reviewP,
+        allTxnP,
         accountsP,
         topCatsApiP,
         overviewP,
       ]);
       setSpend(line);
       setItems(rows);
+      // Unlock intelligence ≠ blindly To Review / Not reviewed inbox size.
+      // Prefer needs_review; also count uncategorized regulars so the tile
+      // can stay meaningful when the filtered inbox is empty (Paul Phase 2).
+      const inboxN = rows.length;
+      const uncategorizedN = allTxns.filter(
+        (txn) =>
+          txn.type === "regular" &&
+          !txn.category_id &&
+          txn.review_status !== "excluded",
+      ).length;
+      setUnlockCount(Math.max(inboxN, uncategorizedN));
       if (accounts) {
         let a = 0;
         let d = 0;
@@ -361,37 +377,46 @@ export default function DashboardScreen() {
     </Card>
   );
 
+  // Copilot: unlock-intelligence tile can remain even when Not reviewed is 0.
+  // Do not replace this CTA with "All caught up" solely because inbox is empty.
   const reviewCard = (
     <Card
       style={styles.gridCard}
       title="Transactions to review"
-      badge={items.length}
-      actionLabel={items.length ? "View all ›" : undefined}
-      onAction={items.length ? () => router.push("/transactions") : undefined}
+      badge={unlockCount > 0 ? unlockCount : undefined}
+      actionLabel="View all ›"
+      onAction={() => router.push("/transactions")}
     >
-      {items.length === 0 && !loading ? (
-        <EmptySparkle
-          title="All caught up!"
-          body="You have no transactions to review. We'll let you know when something pops up."
-        />
-      ) : (
-        items.slice(0, 4).map((txn) => (
-          <TxnRow
-            key={txn.id}
-            merchant={txn.note || "Expense"}
-            account="Needs review"
-            amountLabel={formatMoney(txn.amount, txn.currency)}
-            trailing={
-              <PrimaryButton
-                label="Review"
-                variant="secondary"
-                onPress={() => void onReview(txn.id)}
-                style={styles.reviewBtn}
-              />
-            }
-          />
-        ))
-      )}
+      <EmptySparkle
+        title={
+          unlockCount > 0
+            ? `${unlockCount} transaction${unlockCount === 1 ? "" : "s"} to unlock intelligence`
+            : "Unlock intelligence"
+        }
+        body={
+          unlockCount > 0
+            ? "Confirm imported activity to sharpen insights."
+            : "This unlock CTA stays available even when your Not reviewed list is empty. Import or sync bulk activity to populate it."
+        }
+      />
+      {items.length > 0
+        ? items.slice(0, 4).map((txn) => (
+            <TxnRow
+              key={txn.id}
+              merchant={txn.note || "Expense"}
+              account="Needs review"
+              amountLabel={formatMoney(txn.amount, txn.currency)}
+              trailing={
+                <PrimaryButton
+                  label="Review"
+                  variant="secondary"
+                  onPress={() => void onReview(txn.id)}
+                  style={styles.reviewBtn}
+                />
+              }
+            />
+          ))
+        : null}
     </Card>
   );
 

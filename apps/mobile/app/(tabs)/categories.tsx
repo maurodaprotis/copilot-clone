@@ -41,7 +41,7 @@ function BudgetBar({ spent, budget }: { spent: number; budget: number }) {
   return <ProgressBar progress={pct} color={color} height={4} />;
 }
 
-const EMOJI_CHOICES = ["📁", "☕", "🛒", "🍽️", "🚗", "🏠", "💊", "🎮", "✈️", "💵", "🎁", "📦"];
+const EMOJI_CHOICES = ["💸", "📁", "☕", "🛒", "🍽️", "🚗", "🏠", "💊", "🎮", "✈️", "💵", "🎁", "📦"];
 const COLOR_CHOICES = [
   "#94a3b8",
   "#60A5FA",
@@ -93,6 +93,7 @@ export default function CategoriesScreen() {
   const [loading, setLoading] = useState(true);
   const [editRow, setEditRow] = useState<CategoryBudgetRow | null>(null);
   const [editAmount, setEditAmount] = useState("");
+  const [editApplyTo, setEditApplyTo] = useState<"month" | "all_months">("month");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [source, setSource] = useState<"api" | "local">("local");
@@ -100,7 +101,7 @@ export default function CategoriesScreen() {
   const [newName, setNewName] = useState("");
   const [newGroupId, setNewGroupId] = useState("grp-other");
   const [newIncome, setNewIncome] = useState(false);
-  const [newEmoji, setNewEmoji] = useState("📁");
+  const [newEmoji, setNewEmoji] = useState("💸");
   const [newColor, setNewColor] = useState("#94a3b8");
   const [includeInSpent, setIncludeInSpent] = useState(true);
   const [newBudget, setNewBudget] = useState("100");
@@ -171,6 +172,7 @@ export default function CategoriesScreen() {
         category_id: editRow.category.id,
         year_month: yearMonth,
         budgeted_amount: n,
+        apply_to: editApplyTo,
       });
       // Web already POSTed budget_upsert; native drains outbox. Soft-fail on web memory db.
       await syncOutbox(createApiTransport()).catch(() => ({ pushed: 0 }));
@@ -187,7 +189,7 @@ export default function CategoriesScreen() {
   function resetCreateForm() {
     setNewName("");
     setNewIncome(false);
-    setNewEmoji("📁");
+    setNewEmoji("💸");
     setNewColor("#94a3b8");
     setIncludeInSpent(true);
     setNewBudget("100");
@@ -307,6 +309,7 @@ export default function CategoriesScreen() {
                   onPress={() => {
                     setEditRow(row);
                     setEditAmount(String(row.budgeted_amount));
+                    setEditApplyTo("month");
                     setMsg(null);
                   }}
                 >
@@ -346,8 +349,29 @@ export default function CategoriesScreen() {
               {editRow?.category.emoji} {editRow?.category.name}
             </Text>
             <Text style={styles.modalHint}>
-              Budget for {yearMonth} · reporting USD
+              Budget · reporting USD
+              {editApplyTo === "month" ? ` · ${yearMonth}` : " · all months"}
             </Text>
+            <View style={styles.choiceRow}>
+              <Pressable
+                onPress={() => setEditApplyTo("month")}
+                style={[
+                  styles.groupChip,
+                  editApplyTo === "month" && styles.groupChipOn,
+                ]}
+              >
+                <Text style={styles.groupChipText}>This month</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setEditApplyTo("all_months")}
+                style={[
+                  styles.groupChip,
+                  editApplyTo === "all_months" && styles.groupChipOn,
+                ]}
+              >
+                <Text style={styles.groupChipText}>All months</Text>
+              </Pressable>
+            </View>
             <TextInput
               style={styles.input}
               value={editAmount}
@@ -383,7 +407,7 @@ export default function CategoriesScreen() {
           <View style={styles.modalCard} pointerEvents="auto">
             <Text style={styles.modalTitle}>New category</Text>
             <Text style={styles.modalHint}>
-              Name, icon/color, include-in-spent, optional budget
+              Category name, icon (default 💸), color, include-in-spent, budget
             </Text>
             <TextInput
               style={styles.input}
@@ -432,7 +456,7 @@ export default function CategoriesScreen() {
                       setNewColor("#10B981");
                       setIncludeInSpent(false);
                     } else {
-                      setNewEmoji("📁");
+                      setNewEmoji("💸");
                       setNewColor("#94a3b8");
                       setIncludeInSpent(true);
                     }
