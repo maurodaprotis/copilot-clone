@@ -26,7 +26,10 @@ import {
   type LocalTransaction,
 } from "../../src/offline/queries";
 import { getAccountsOverview } from "../../src/offline/accounts";
-import { reviewTransaction } from "../../src/offline/reviewTransaction";
+import {
+  reviewTransaction,
+  setTransactionExcluded,
+} from "../../src/offline/reviewTransaction";
 import {
   assignTagLocal,
   equalSplitAmounts,
@@ -46,19 +49,24 @@ import {
   EmptySparkle,
   IconButton,
   EmptyState,
+  ListRow,
   MasterDetail,
   PrimaryButton,
   Screen,
   ScreenHeader,
   SearchBar,
   SectionLabel,
-  SegmentedControl,
   Amount,
+  Toggle,
   TxnRow,
   useIsDesktopWeb,
 } from "../../src/ui";
 
 type CatMeta = { name: string; emoji: string; color: string };
+
+/** Phase 1 filter chips — include Not excluded (hide review_status=excluded). */
+const TXN_FILTERS = ["All", "To Review", "Not excluded", "Income", "Expenses"] as const;
+type TxnFilter = (typeof TXN_FILTERS)[number];
 
 function money(amount: number, currency: string): string {
   try {
@@ -185,7 +193,7 @@ export default function TransactionsScreen() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [showComposer, setShowComposer] = useState(false);
-  const [filter, setFilter] = useState("All");
+  const [filter, setFilter] = useState<TxnFilter>("All");
   const [query, setQuery] = useState("");
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
@@ -351,10 +359,32 @@ export default function TransactionsScreen() {
     }
   }
 
+  async function onExcludeToggle(id: string, excluded: boolean) {
+    setBusy(true);
+    try {
+      await setTransactionExcluded(id, excluded);
+      await syncOutbox(createApiTransport());
+      await reload();
+      if (detail?.id === id) {
+        setDetail((prev) =>
+          prev && prev.id === id
+            ? {
+                ...prev,
+                review_status: excluded ? "excluded" : "reviewed",
+              }
+            : prev,
+        );
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function matchesFilter(txn: LocalTransaction): boolean {
     const title = txnTitle(txn).toLowerCase();
     if (query && !title.includes(query.toLowerCase())) return false;
     if (filter === "To Review") return txn.review_status === "needs_review";
+    if (filter === "Not excluded") return txn.review_status !== "excluded";
     if (filter === "Income") return txn.type === "income";
     if (filter === "Expenses") return txn.type !== "income";
     return true;
@@ -388,7 +418,11 @@ export default function TransactionsScreen() {
       <TxnRow
         key={txn.id}
         merchant={txnTitle(txn)}
-        account={accountLabel(txn)}
+        account={
+          txn.review_status === "excluded"
+            ? `${accountLabel(txn)} · excluded`
+            : accountLabel(txn)
+        }
         categoryEmoji={cat.emoji}
         categoryName={cat.name}
         categoryColor={cat.color}
@@ -463,6 +497,20 @@ export default function TransactionsScreen() {
           style={{ marginTop: spacing.md }}
         />
       ) : null}
+
+      <View style={[styles.detailSection, { marginTop: spacing.md }]}>
+        <ListRow
+          title="Exclude from totals"
+          subtitle="Drops from budgets and default cash flow; stays in the list"
+          right={
+            <Toggle
+              value={detail.review_status === "excluded"}
+              onChange={(next) => void onExcludeToggle(detail.id, next)}
+              disabled={busy}
+            />
+          }
+        />
+      </View>
 
       <View style={styles.detailSection}>
         <View style={styles.detailSectionHead}>
@@ -659,12 +707,22 @@ export default function TransactionsScreen() {
         placeholder="Search"
         style={{ marginBottom: spacing.sm }}
       />
-      <SegmentedControl
-        options={["All", "To Review", "Income", "Expenses"]}
-        value={filter}
-        onChange={setFilter}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
         style={{ marginBottom: spacing.md }}
-      />
+        contentContainerStyle={styles.filterChips}
+      >
+        {TXN_FILTERS.map((opt) => (
+          <Chip
+            key={opt}
+            label={opt}
+            selected={filter === opt}
+            onPress={() => setFilter(opt)}
+            tone="soft"
+          />
+        ))}
+      </ScrollView>
 
       {loading && filtered.length === 0 ? (
         <Card>
@@ -767,6 +825,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgInput,
     color: colors.textPrimary,
     fontSize: 16,
+  },
+  filterChips: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingRight: spacing.md,
   },
   chipRow: {
     flexDirection: "row",
