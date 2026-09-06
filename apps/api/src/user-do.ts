@@ -248,12 +248,20 @@ export class UserDO extends DurableObject<Env> {
     );
     for (const t of extras) {
       this.ctx.storage.sql.exec(
-        `INSERT OR IGNORE INTO transactions (
+        `INSERT INTO transactions (
           id, account_id, category_id, amount, currency,
           amount_account, amount_reporting, type, is_refund,
           review_status, posted_at, name, note, transfer_pair_id, fingerprint,
           is_split_parent, synced, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, 1, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, 1, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          review_status = excluded.review_status,
+          posted_at = excluded.posted_at,
+          amount = excluded.amount,
+          amount_account = excluded.amount_account,
+          amount_reporting = excluded.amount_reporting,
+          name = excluded.name,
+          updated_at = excluded.updated_at`,
         t.id,
         t.account_id,
         t.category_id,
