@@ -1,6 +1,7 @@
 import {
   balanceDeltaForTxn,
   normalizeReviewStatus,
+  type ReviewStatus,
   type Transaction,
 } from "@copilot-clone/domain";
 import { isWebRuntime } from "../db/runtime";
@@ -8,23 +9,25 @@ import type { LocalDb } from "../db/types";
 import { webSyncOrEnqueue } from "./webSyncWrite";
 
 /**
- * Mark a transaction reviewed.
- * - Web / Pages: POST review op to Worker (queues web outbox offline). Never expo-sqlite.
+ * Set transaction review_status (reviewed | needs_review | excluded).
+ * - Web / Pages: POST review op to Worker (queues web outbox offline).
  * - Native: local SQLite + outbox enqueue.
- * When review flips balance applicability, persist the delta on accounts.current_balance.
+ * Balance delta applied when applicability flips (e.g. exclude ↔ reviewed).
  */
-export async function reviewTransaction(
+export async function setTransactionReviewStatus(
   transactionId: string,
+  reviewStatus: ReviewStatus,
   dbOverride?: LocalDb,
 ): Promise<{ outboxId: string }> {
   const now = new Date().toISOString();
+  const status = normalizeReviewStatus(reviewStatus);
 
   if (!dbOverride && isWebRuntime()) {
     const result = await webSyncOrEnqueue({
       payload: {
         op: "review",
         id: transactionId,
-        review_status: "reviewed",
+        review_status: status,
         updated_at: now,
       },
       entity_type: "transaction_review",
@@ -73,13 +76,13 @@ export async function reviewTransaction(
     transfer_pair_id: null,
     fingerprint: existing.fingerprint,
   };
-  const after: Transaction = { ...before, review_status: "reviewed" };
+  const after: Transaction = { ...before, review_status: status };
   const delta = balanceDeltaForTxn(after) - balanceDeltaForTxn(before);
 
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       `UPDATE transactions SET review_status = ?, synced = 0, updated_at = ? WHERE id = ?`,
-      "reviewed",
+      status,
       now,
       transactionId,
     );
@@ -95,7 +98,7 @@ export async function reviewTransaction(
     const payload = JSON.stringify({
       op: "review",
       id: transactionId,
-      review_status: "reviewed",
+      review_status: status,
       updated_at: now,
     });
 
@@ -110,4 +113,25 @@ export async function reviewTransaction(
   });
 
   return { outboxId };
+}
+
+/** Mark a transaction reviewed (inbox → reviewed). */
+export async function reviewTransaction(
+  transactionId: string,
+  dbOverride?: LocalDb,
+): Promise<{ outboxId: string }> {
+  return setTransactionReviewStatus(transactionId, "reviewed", dbOverride);
+}
+
+/** Exclude / un-exclude from budgets & default cash flow (API review op). */
+export async function setTransactionExcluded(
+  transactionId: string,
+  excluded: boolean,
+  dbOverride?: LocalDb,
+): Promise<{ outboxId: string }> {
+  return setTransactionReviewStatus(
+    transactionId,
+    excluded ? "excluded" : "reviewed",
+    dbOverride,
+  );
 }

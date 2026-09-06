@@ -22,6 +22,10 @@ import {
 } from "../../src/offline/budgets";
 import { getAccountsOverview } from "../../src/offline/accounts";
 import { reviewTransaction } from "../../src/offline/reviewTransaction";
+import {
+  computeUnlockCount,
+  unlockIntelligenceCopy,
+} from "../../src/lib/unlockIntelligence";
 import { syncOutbox } from "../../src/offline/syncOutbox";
 import { createApiTransport } from "../../src/sync/apiTransport";
 import { pullCategoriesFromApi } from "../../src/sync/pullCategories";
@@ -176,7 +180,7 @@ export default function DashboardScreen() {
       setItems(rows);
       // Unlock intelligence ≠ blindly To Review / Not reviewed inbox size.
       // Prefer needs_review; also count uncategorized regulars so the tile
-      // can stay meaningful when the filtered inbox is empty (Paul Phase 2).
+      // can stay meaningful when the filtered inbox is empty (Paul Phase 2 / #34).
       const inboxN = rows.length;
       const uncategorizedN = allTxns.filter(
         (txn) =>
@@ -184,7 +188,12 @@ export default function DashboardScreen() {
           !txn.category_id &&
           txn.review_status !== "excluded",
       ).length;
-      setUnlockCount(Math.max(inboxN, uncategorizedN));
+      setUnlockCount(
+        computeUnlockCount({
+          inboxCount: inboxN,
+          uncategorizedRegularCount: uncategorizedN,
+        }),
+      );
       if (accounts) {
         let a = 0;
         let d = 0;
@@ -377,8 +386,9 @@ export default function DashboardScreen() {
     </Card>
   );
 
-  // Copilot: unlock-intelligence tile can remain even when Not reviewed is 0.
-  // Do not replace this CTA with "All caught up" solely because inbox is empty.
+  // Copilot: unlock-intelligence tile ALWAYS remains — never swap to
+  // Transactions "All caught up!" just because needs_review inbox is 0 (#34 nit).
+  const unlockCopy = unlockIntelligenceCopy(unlockCount);
   const reviewCard = (
     <Card
       style={styles.gridCard}
@@ -387,20 +397,12 @@ export default function DashboardScreen() {
       actionLabel="View all ›"
       onAction={() => router.push("/transactions")}
     >
-      <EmptySparkle
-        title={
-          unlockCount > 0
-            ? `${unlockCount} transaction${unlockCount === 1 ? "" : "s"} to unlock intelligence`
-            : "Unlock intelligence"
-        }
-        body={
-          unlockCount > 0
-            ? "Confirm imported activity to sharpen insights."
-            : "This unlock CTA stays available even when your Not reviewed list is empty. Import or sync bulk activity to populate it."
-        }
-      />
-      {items.length > 0
-        ? items.slice(0, 4).map((txn) => (
+      {items.length === 0 ? (
+        <EmptySparkle title={unlockCopy.title} body={unlockCopy.body} />
+      ) : (
+        <>
+          <Text style={styles.unlockBanner}>{unlockCopy.title}</Text>
+          {items.slice(0, 4).map((txn) => (
             <TxnRow
               key={txn.id}
               merchant={txn.note || "Expense"}
@@ -415,8 +417,9 @@ export default function DashboardScreen() {
                 />
               }
             />
-          ))
-        : null}
+          ))}
+        </>
+      )}
     </Card>
   );
 
@@ -519,6 +522,12 @@ const styles = StyleSheet.create({
   spendMeta: { ...type.footnote, marginTop: 4, color: colors.textSecondary, fontWeight: "500" },
   status: { ...type.footnote, color: colors.textPrimary, marginTop: spacing.sm },
   reviewBtn: { minWidth: 72, minHeight: 32, paddingVertical: 6, paddingHorizontal: 10 },
+  unlockBanner: {
+    ...type.footnote,
+    color: colors.textSecondary,
+    fontWeight: "600",
+    marginBottom: spacing.sm,
+  },
   emptyHint: { ...type.footnote, textAlign: "center", paddingVertical: 8, color: colors.textSecondary },
   nwRow: { flexDirection: "row", gap: spacing.lg, marginBottom: spacing.sm },
   nwCol: { flex: 1 },
