@@ -30,6 +30,18 @@ describe("web outbox (localStorage / memory)", () => {
     expect(countWebOutbox()).toBe(0);
   });
 
+  it("keeps rows when transport returns ok with empty saved", async () => {
+    enqueueWebOutbox({
+      entity_type: "transaction",
+      entity_id: "t-empty",
+      payload: { op: "upsert", id: "t-empty" },
+    });
+    const result = await drainWebOutbox(async () => ({ ok: true, saved: [] }));
+    expect(result.pushed).toBe(0);
+    expect(countWebOutbox()).toBe(1);
+    expect(listWebOutbox()[0]!.last_error).toMatch(/empty saved/);
+  });
+
   it("keeps rows and bumps attempts when transport fails", async () => {
     enqueueWebOutbox({
       entity_type: "transaction",

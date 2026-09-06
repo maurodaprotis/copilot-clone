@@ -26,6 +26,9 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
 
     if (s.startsWith("INSERT INTO transactions")) {
       // Support legacy (type hardcoded in SQL) and web-outbox (type as bind param).
+      // review_status may be a SQL literal ('reviewed' | 'needs_review').
+      const reviewLit = s.match(/0, '(needs_review|reviewed|excluded)',/);
+      const reviewStatus = reviewLit?.[1] ?? "needs_review";
       const withTypeParam = p.length >= 14;
       const row: Row = withTypeParam
         ? {
@@ -38,7 +41,7 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
             amount_reporting: p[6] as number,
             type: (p[7] as string) || "regular",
             is_refund: 0,
-            review_status: "needs_review",
+            review_status: reviewStatus,
             posted_at: p[8] as string,
             note: (p[10] as string | null) ?? (p[9] as string | null),
             transfer_pair_id: null,
@@ -57,7 +60,7 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
             amount_reporting: p[6] as number,
             type: "regular",
             is_refund: 0,
-            review_status: "needs_review",
+            review_status: reviewStatus,
             posted_at: p[7] as string,
             note: p[8] as string | null,
             transfer_pair_id: null,

@@ -52,7 +52,7 @@ describe("txn web API helpers", () => {
       op: "upsert",
       id: "txn-1",
       type: "regular",
-      review_status: "needs_review",
+      review_status: "reviewed",
       amount: 12.5,
     });
   });
@@ -97,7 +97,12 @@ describe("txn native sqlite path (memory db)", () => {
       db,
     );
     const toReview = await listToReview(db);
-    expect(toReview).toHaveLength(1);
-    expect(toReview[0]!.id).toBe(transactionId);
+    expect(toReview).toHaveLength(0);
+    const all = await db.getAllAsync<{ id: string; review_status: string }>(
+      "SELECT id, review_status FROM transactions",
+    );
+    expect(all).toHaveLength(1);
+    expect(all[0]!.id).toBe(transactionId);
+    expect(all[0]!.review_status).toBe("reviewed");
   });
 });

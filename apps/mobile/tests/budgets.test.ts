@@ -74,6 +74,12 @@ describe("local budgets + needs_review exclusion", () => {
       },
       db,
     );
+    await db.runAsync(
+      `UPDATE transactions SET review_status = ?, synced = 0, updated_at = ? WHERE id = ?`,
+      "needs_review",
+      "2026-09-04T12:00:00.000Z",
+      transactionId,
+    );
 
     let overview = await getCategoryBudgetOverview(ym, db);
     const diningBefore = overview.rows.find(
@@ -107,7 +113,10 @@ describe("local budgets + needs_review exclusion", () => {
     const remote: unknown[] = [];
     await syncOutbox(async (items) => {
       remote.push(...items);
-      return { ok: true };
+      return {
+        ok: true,
+        saved: items.map((i) => String((i as { category_id?: string }).category_id ?? "x")),
+      };
     }, db);
 
     expect(remote[0]).toMatchObject({

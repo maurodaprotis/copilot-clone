@@ -53,8 +53,8 @@ export function TxnRow({
     ? hexToRgba(categoryColor, 0.2)
     : colors.bgMuted;
 
-  const content = (
-    <View style={[styles.row, selected && styles.selected]}>
+  const main = (
+    <>
       {selected ? <View style={styles.selBar} /> : null}
       {showCheckbox ? (
         <Pressable
@@ -91,17 +91,30 @@ export function TxnRow({
         <CategoryPill emoji={categoryEmoji} name={categoryName} color={categoryColor} />
       ) : null}
       <Amount value={amountLabel} variant={income ? "income" : "expense"} />
-      {trailing}
-    </View>
+    </>
   );
+
+  // Trailing (e.g. Review) must be a SIBLING of the row Pressable on web —
+  // nested Pressables swallow / miss clicks (pointer-events).
   if (onPress) {
     return (
-      <Pressable onPress={onPress} style={({ pressed }) => pressed && styles.pressed}>
-        {content}
-      </Pressable>
+      <View style={[styles.row, selected && styles.selected]}>
+        <Pressable
+          onPress={onPress}
+          style={({ pressed }) => [styles.rowPress, pressed && styles.pressed]}
+        >
+          {main}
+        </Pressable>
+        {trailing ? <View style={styles.trailingSlot}>{trailing}</View> : null}
+      </View>
     );
   }
-  return content;
+  return (
+    <View style={[styles.row, selected && styles.selected]}>
+      {main}
+      {trailing ? <View style={styles.trailingSlot}>{trailing}</View> : null}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -113,6 +126,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     minHeight: 44,
     position: "relative",
+  },
+  rowPress: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    minWidth: 0,
+  },
+  trailingSlot: {
+    flexShrink: 0,
+    zIndex: 2,
   },
   selected: {
     backgroundColor: colors.bgSelection,

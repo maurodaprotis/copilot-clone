@@ -54,9 +54,13 @@ export function SettingsSheet({
   const sections = ["SETTINGS", "CONNECTIONS", "SUPPORT"] as const;
 
   return (
-    <View style={styles.scrim} accessibilityViewIsModal>
-      <Pressable style={StyleSheet.absoluteFill} onPress={() => router.back()} />
-      <View style={styles.modal}>
+    <View style={styles.scrim} accessibilityViewIsModal pointerEvents="box-none">
+      <Pressable
+        style={StyleSheet.absoluteFillObject}
+        onPress={() => router.back()}
+        accessibilityLabel="Dismiss settings"
+      />
+      <View style={styles.modal} pointerEvents="auto">
         <View style={styles.rail}>
           <Text style={styles.brand}>Settings</Text>
           {sections.map((section) => (
@@ -121,6 +125,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgElevated,
     borderRadius: radius.modal,
     overflow: "hidden",
+    zIndex: 2,
+    elevation: 8,
     ...shadow.modal,
   },
   rail: {

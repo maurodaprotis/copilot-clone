@@ -4,6 +4,7 @@ import {
   applyCsvMapping,
   applyNameRuleToTransaction,
   assertBalancedSplit,
+  ClientError,
   isClientError,
   importFingerprint,
   balanceDeltaForTxn,
@@ -71,7 +72,8 @@ type SyncPushItem = {
     | "tag_assign"
     | "tag_unassign"
     | "split_set"
-    | "recurring_upsert";
+    | "recurring_upsert"
+    | "category_upsert";
   id?: string;
   account_id?: string;
   category_id?: string | null;
@@ -96,6 +98,13 @@ type SyncPushItem = {
   budgeted_amount?: number;
   rollover_mode?: string;
   rollover_from_prior?: number;
+  // category_upsert
+  group_id?: string;
+  emoji?: string;
+  exclude_from_budget?: boolean;
+  is_income_category?: boolean;
+  archived?: boolean;
+  sort_order?: number;
   // account_upsert / tag / rule
   name?: string;
   is_archived?: boolean;
@@ -143,6 +152,7 @@ export class UserDO extends DurableObject<Env> {
        WHERE review_status = 'pending'`,
     );
     this.seedIfEmpty();
+    this.ensureIncomeCategories();
     this.seedDemoTxnsIfEmpty();
     this.seedFxIfNeeded();
     this.seedSettingsIfNeeded();
@@ -209,6 +219,20 @@ export class UserDO extends DurableObject<Env> {
    * Demo ledger for empty DOs (Pages preview / Paul).
    * Only inserts when there are zero live transactions — never clobbers real sync data.
    */
+  /** Idempotent: Income group + Salary even when DO was seeded before income existed. */
+  private ensureIncomeCategories(): void {
+    this.ctx.storage.sql.exec(
+      `INSERT OR IGNORE INTO category_groups (id, name, sort_order, is_system)
+       VALUES ('grp-income', 'Income', 0, 1)`,
+    );
+    this.ctx.storage.sql.exec(
+      `INSERT OR IGNORE INTO categories (
+         id, group_id, name, emoji, color,
+         exclude_from_budget, is_income_category, archived, sort_order
+       ) VALUES ('cat-salary', 'grp-income', 'Salary', '💵', '#10B981', 1, 1, 0, 1)`,
+    );
+  }
+
   private seedDemoTxnsIfEmpty(): void {
     // Skip if demo ledger already present.
     const demoRows = [
@@ -658,7 +682,8 @@ export class UserDO extends DurableObject<Env> {
   private findByFingerprint(fingerprint: string): string | null {
     const rows = [
       ...this.ctx.storage.sql.exec(
-        "SELECT id FROM transactions WHERE fingerprint = ? LIMIT 1",
+        `SELECT id FROM transactions
+         WHERE fingerprint = ? AND deleted_at IS NULL LIMIT 1`,
         fingerprint,
       ),
     ];
@@ -868,19 +893,43 @@ export class UserDO extends DurableObject<Env> {
   }
 
   private applyUpsert(item: SyncPushItem, rateBook: RateBook): string {
+    const id = item.id;
+    if (!id) throw new ClientError("upsert_invalid", "upsert requires id");
+    if (!item.account_id) {
+      throw new ClientError("upsert_invalid", "upsert requires account_id");
+    }
+    if (item.amount == null || !Number.isFinite(Number(item.amount))) {
+      throw new ClientError("upsert_invalid", "upsert requires amount");
+    }
+    if (!item.currency) {
+      throw new ClientError("upsert_invalid", "upsert requires currency");
+    }
+    const postedAt = item.posted_at ?? new Date().toISOString();
+    const amount = Number(item.amount);
+    const currency = item.currency.toUpperCase();
+
+    // Dedup only against live rows; soft-deleted fingerprints must not block write.
     if (item.fingerprint) {
       const existingId = this.findByFingerprint(item.fingerprint);
-      if (existingId && existingId !== item.id) {
+      if (existingId && existingId !== id) {
         return existingId;
       }
     }
 
+    const account = this.listAccounts().find((a) => a.id === item.account_id);
+    const accountCurrency = (
+      item.account_currency ?? account?.currency ?? currency
+    ).toUpperCase();
+    const reportingCurrency = (
+      item.reporting_currency ?? this.getSettings().reporting_currency
+    ).toUpperCase();
+
     const amounts = deriveAmounts({
-      amount: item.amount!,
-      currency: item.currency!,
-      account_currency: item.account_currency!,
-      reporting_currency: item.reporting_currency!,
-      on_date: (item.posted_at ?? new Date().toISOString()).slice(0, 10),
+      amount,
+      currency,
+      account_currency: accountCurrency,
+      reporting_currency: reportingCurrency,
+      on_date: postedAt.slice(0, 10),
       rate_book: rateBook,
     });
     const now = new Date().toISOString();
@@ -889,53 +938,76 @@ export class UserDO extends DurableObject<Env> {
 
     let categoryId = item.category_id ?? null;
     const draft: Transaction = {
-      id: item.id!,
-      account_id: item.account_id!,
+      id,
+      account_id: item.account_id,
       category_id: categoryId,
-      amount: item.amount!,
-      currency: item.currency!,
+      amount,
+      currency,
       amount_account: amounts.amount_account,
       amount_reporting: amounts.amount_reporting,
       type: (item.type as Transaction["type"]) ?? "regular",
       is_refund: !!item.is_refund,
       review_status: reviewStatus,
-      posted_at: item.posted_at!,
+      posted_at: postedAt,
       name: txnName,
       note: item.note ?? null,
       transfer_pair_id: item.transfer_pair_id ?? null,
       fingerprint: item.fingerprint ?? null,
     };
     categoryId = applyNameRuleToTransaction(draft, this.listNameRules()).category_id;
-    const before = item.id ? this.loadTxnDomainById(item.id) : null;
+    const before = this.loadTxnDomainById(id);
+    const createdAt = before ? String(
+      [...this.ctx.storage.sql.exec(`SELECT created_at FROM transactions WHERE id = ?`, id)][0]
+        ?.created_at ?? now,
+    ) : now;
 
     this.ctx.storage.sql.exec(
-      `INSERT OR REPLACE INTO transactions (
+      `INSERT INTO transactions (
         id, account_id, category_id, amount, currency,
         amount_account, amount_reporting, type, is_refund,
         review_status, posted_at, name, note, transfer_pair_id, fingerprint,
-        is_split_parent, synced, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-      item.id,
+        is_split_parent, synced, created_at, updated_at, deleted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
+      ON CONFLICT(id) DO UPDATE SET
+        account_id = excluded.account_id,
+        category_id = excluded.category_id,
+        amount = excluded.amount,
+        currency = excluded.currency,
+        amount_account = excluded.amount_account,
+        amount_reporting = excluded.amount_reporting,
+        type = excluded.type,
+        is_refund = excluded.is_refund,
+        review_status = excluded.review_status,
+        posted_at = excluded.posted_at,
+        name = excluded.name,
+        note = excluded.note,
+        transfer_pair_id = excluded.transfer_pair_id,
+        fingerprint = excluded.fingerprint,
+        is_split_parent = excluded.is_split_parent,
+        synced = 1,
+        updated_at = excluded.updated_at,
+        deleted_at = NULL`,
+      id,
       item.account_id,
       categoryId,
-      item.amount,
-      item.currency!.toUpperCase(),
+      amount,
+      currency,
       amounts.amount_account,
       amounts.amount_reporting,
       item.type ?? "regular",
       item.is_refund ? 1 : 0,
       reviewStatus,
-      item.posted_at,
+      postedAt,
       txnName,
       item.note ?? null,
       item.transfer_pair_id ?? null,
       item.fingerprint ?? null,
       item.is_split_parent ? 1 : 0,
-      now,
+      createdAt,
       now,
     );
 
-    const after = item.id ? this.loadTxnDomainById(item.id) : null;
+    const after = this.loadTxnDomainById(id);
     if (before) {
       this.applyAccountBalanceDelta(before.account_id, -balanceDeltaForTxn(before));
     }
@@ -945,7 +1017,68 @@ export class UserDO extends DurableObject<Env> {
     if (after && reviewStatus === "reviewed") {
       this.tryMatchRecurringForTxn(after, now);
     }
-    return item.id!;
+    return id;
+  }
+
+
+  private applyCategoryUpsert(item: SyncPushItem): string {
+    const id = item.id ?? crypto.randomUUID();
+    const name = (item.name ?? "").trim();
+    if (!name) throw new ClientError("category_upsert_invalid", "category_upsert requires name");
+    const isIncome = !!item.is_income_category;
+    const groupId = item.group_id ?? (isIncome ? "grp-income" : "grp-other");
+    // Ensure group row exists (custom groups allowed).
+    const groupRows = [
+      ...this.ctx.storage.sql.exec(
+        `SELECT id FROM category_groups WHERE id = ? LIMIT 1`,
+        groupId,
+      ),
+    ];
+    if (groupRows.length === 0) {
+      const maxSort = [
+        ...this.ctx.storage.sql.exec(
+          `SELECT COALESCE(MAX(sort_order), 0) AS m FROM category_groups`,
+        ),
+      ];
+      const sort = Number(maxSort[0]?.m ?? 0) + 1;
+      this.ctx.storage.sql.exec(
+        `INSERT INTO category_groups (id, name, sort_order, is_system)
+         VALUES (?, ?, ?, 0)`,
+        groupId,
+        isIncome ? "Income" : "Custom",
+        sort,
+      );
+    }
+    const emoji = item.emoji ?? (isIncome ? "💵" : "📁");
+    const color = item.color ?? (isIncome ? "#10B981" : "#94a3b8");
+    const exclude = item.exclude_from_budget == null ? (isIncome ? 1 : 0) : (item.exclude_from_budget ? 1 : 0);
+    const archived = item.archived ? 1 : 0;
+    const sortOrder = Number(item.sort_order ?? 100);
+    this.ctx.storage.sql.exec(
+      `INSERT INTO categories (
+         id, group_id, name, emoji, color,
+         exclude_from_budget, is_income_category, archived, sort_order
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         group_id = excluded.group_id,
+         name = excluded.name,
+         emoji = excluded.emoji,
+         color = excluded.color,
+         exclude_from_budget = excluded.exclude_from_budget,
+         is_income_category = excluded.is_income_category,
+         archived = excluded.archived,
+         sort_order = excluded.sort_order`,
+      id,
+      groupId,
+      name,
+      emoji,
+      color,
+      exclude,
+      isIncome ? 1 : 0,
+      archived,
+      sortOrder,
+    );
+    return id;
   }
 
   private applyRuleUpsert(item: SyncPushItem): string {
@@ -1388,12 +1521,22 @@ export class UserDO extends DurableObject<Env> {
 
 
     if (request.method === "POST" && url.pathname === "/sync") {
-      const body = (await request.json()) as { items: SyncPushItem[] };
+      const raw = (await request.json()) as
+        | SyncPushItem[]
+        | { items?: SyncPushItem[]; item?: SyncPushItem };
+      const items: SyncPushItem[] = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw?.items)
+          ? raw.items
+          : raw?.item
+            ? [raw.item]
+            : [];
       const rateBook = this.loadRateBook();
       const saved: string[] = [];
 
       try {
-        for (const item of body.items ?? []) {
+        for (const item of items) {
+          if (!item || typeof item !== "object") continue;
           if (item.op === "review") {
             saved.push(this.applyReview(item));
             continue;
@@ -1404,6 +1547,10 @@ export class UserDO extends DurableObject<Env> {
           }
           if (item.op === "account_upsert") {
             saved.push(this.applyAccountUpsert(item));
+            continue;
+          }
+          if (item.op === "category_upsert") {
+            saved.push(this.applyCategoryUpsert(item));
             continue;
           }
           if (item.op === "rule_upsert") {
@@ -1430,16 +1577,31 @@ export class UserDO extends DurableObject<Env> {
             saved.push(this.applyRecurringUpsert(item));
             continue;
           }
-          saved.push(this.applyUpsert(item, rateBook));
+          // Default / explicit upsert — must always push a saved id when item is valid.
+          if (item.op === "upsert" || item.op == null || item.id) {
+            saved.push(this.applyUpsert(item, rateBook));
+          }
         }
       } catch (err) {
         if (isClientError(err)) {
           return Response.json(
-            { error: err.code, message: err.message },
+            { ok: false, error: err.code, message: err.message, saved },
             { status: err.status },
           );
         }
         throw err;
+      }
+
+      if (items.length > 0 && saved.length === 0) {
+        return Response.json(
+          {
+            ok: false,
+            error: "sync_empty_saved",
+            message: "No items were persisted",
+            saved,
+          },
+          { status: 400 },
+        );
       }
 
       return Response.json({

@@ -402,7 +402,7 @@ export default function TransactionsScreen() {
         selected={detail?.id === txn.id}
         onPress={() => void openDetail(txn)}
         trailing={
-          !desktop && txn.review_status === "needs_review" ? (
+          txn.review_status === "needs_review" ? (
             <PrimaryButton
               label="Review"
               variant="secondary"
@@ -597,7 +597,7 @@ export default function TransactionsScreen() {
               selected={txnKind === "income"}
               onPress={() => {
                 setTxnKind("income");
-                setCategoryId("cat-work");
+                setCategoryId("cat-salary");
               }}
             />
           </View>
@@ -629,7 +629,7 @@ export default function TransactionsScreen() {
           <Text style={styles.label}>Category</Text>
           <View style={styles.chipRow}>
             {(txnKind === "income"
-              ? ["cat-work", "cat-interest"]
+              ? ["cat-salary", "cat-interest"]
               : ["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"]
             ).map((id) => (
               <Chip
@@ -737,8 +737,14 @@ export default function TransactionsScreen() {
     <Screen refreshing={loading} onRefresh={() => void reload()}>
       {listBody}
       <Modal visible={!!detail} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>{detailBody}</View>
+        <View style={styles.modalBackdrop} pointerEvents="box-none">
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => setDetail(null)}
+          />
+          <View style={styles.modalCard} pointerEvents="auto">
+            {detailBody}
+          </View>
         </View>
       </Modal>
     </Screen>
@@ -901,5 +907,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radius.xl,
     padding: spacing.lg,
     maxHeight: "88%",
+    zIndex: 2,
+    elevation: 8,
   },
 });

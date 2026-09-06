@@ -6,7 +6,7 @@ import { reviewTransaction } from "../src/offline/reviewTransaction";
 import { syncOutbox } from "../src/offline/syncOutbox";
 
 describe("offline → To Review → sync", () => {
-  it("adds needs_review expense to To Review and outbox", async () => {
+  it("adds reviewed expense (manual) to ledger and outbox", async () => {
     const db = createMemoryDb();
     const { transactionId } = await addExpenseOffline(
       {
@@ -22,15 +22,18 @@ describe("offline → To Review → sync", () => {
       db,
     );
 
-    const toReview = await listToReview(db);
-    expect(toReview).toHaveLength(1);
-    expect(toReview[0]!.id).toBe(transactionId);
-    expect(toReview[0]!.review_status).toBe("needs_review");
-    expect(toReview[0]!.synced).toBe(0);
+    // Manual add is reviewed — not in To Review (import-only).
+    expect(await listToReview(db)).toHaveLength(0);
+    const row = await db.getFirstAsync<{ id: string; review_status: string; synced: number }>(
+      "SELECT id, review_status, synced FROM transactions WHERE id = ?",
+      transactionId,
+    );
+    expect(row?.review_status).toBe("reviewed");
+    expect(row?.synced).toBe(0);
     expect(await countOutbox(db)).toBe(1);
   });
 
-  it("sync clears outbox, marks synced, keeps needs_review", async () => {
+  it("sync clears outbox, marks synced, keeps reviewed for manual add", async () => {
     const db = createMemoryDb();
     await addExpenseOffline(
       {
@@ -55,27 +58,36 @@ describe("offline → To Review → sync", () => {
     expect(pushed.pushed).toBe(1);
     expect(await countOutbox(db)).toBe(0);
     expect(remoteStore).toHaveLength(1);
+    expect(remoteStore[0]).toMatchObject({ review_status: "reviewed" });
 
-    const toReview = await listToReview(db);
-    expect(toReview).toHaveLength(1);
-    expect(toReview[0]!.review_status).toBe("needs_review");
-    expect(toReview[0]!.synced).toBe(1);
+    expect(await listToReview(db)).toHaveLength(0);
+    const row = await db.getFirstAsync<{ review_status: string; synced: number }>(
+      "SELECT review_status, synced FROM transactions WHERE id = ?",
+      "txn-1",
+    );
+    expect(row?.review_status).toBe("reviewed");
+    expect(row?.synced).toBe(1);
   });
 
   it("review marks reviewed locally and queues sync", async () => {
     const db = createMemoryDb();
-    const { transactionId } = await addExpenseOffline(
-      {
-        account_id: "acc-cash-ars",
-        amount: 9,
-        currency: "USD",
-        account_currency: "ARS",
-        reporting_currency: "USD",
-      },
-      db,
+    // Seed a needs_review row (import-shaped) to exercise review path.
+    const transactionId = "txn-import-1";
+    const now = new Date().toISOString();
+    await db.runAsync(
+      `INSERT INTO transactions (
+        id, account_id, category_id, amount, currency,
+        amount_account, amount_reporting, type, is_refund,
+        review_status, posted_at, name, note, transfer_pair_id, fingerprint,
+        is_split_parent, synced, created_at, updated_at
+      ) VALUES (?, 'acc-cash-ars', NULL, 9, 'USD', 9, 9, 'regular', 0,
+        'needs_review', ?, NULL, 'Import', NULL, NULL, 0, 1, ?, ?)`,
+      transactionId,
+      now,
+      now,
+      now,
     );
 
-    await syncOutbox(async () => ({ ok: true }), db);
     expect(await listToReview(db)).toHaveLength(1);
 
     await reviewTransaction(transactionId, db);
@@ -85,7 +97,7 @@ describe("offline → To Review → sync", () => {
     const remote: unknown[] = [];
     await syncOutbox(async (items) => {
       remote.push(...items);
-      return { ok: true };
+      return { ok: true, saved: items.map((i) => (i as { id: string }).id) };
     }, db);
 
     expect(remote[0]).toMatchObject({

@@ -49,7 +49,13 @@ export async function postSyncItems(
       error: data.message || data.error || "sync not ok",
     };
   }
-  return { ok: true, saved: data.saved };
+  const saved = Array.isArray(data.saved) ? data.saved : [];
+  // Treat empty saved as failure when we sent items — otherwise outbox would
+  // drop payloads that never landed in the UserDO.
+  if (items.length > 0 && saved.length === 0) {
+    return { ok: false, saved, error: "sync returned empty saved" };
+  }
+  return { ok: true, saved };
 }
 
 /**
