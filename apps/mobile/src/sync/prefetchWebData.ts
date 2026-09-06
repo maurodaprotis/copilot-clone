@@ -23,6 +23,6 @@ export async function prefetchWebApiData(): Promise<void> {
     // Web listAllTransactions hits GET /transactions (Pages has no durable sqlite).
     listAllTransactions(),
     fetch(`${base}/dashboard/spending?month=${month}`, { headers }),
-    fetch(`${base}/cash-flow?month=${month}`, { headers }),
+    fetch(`${base}/cash-flow?range=mtd&comparison=true&include_excluded=false`, { headers }),
   ]);
 }

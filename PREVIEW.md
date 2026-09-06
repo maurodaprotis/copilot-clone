@@ -20,7 +20,7 @@ Web build is a static Expo Router export (`apps/mobile`) deployed with `wrangler
 - **Categories → edit budget** on web POSTs `budget_upsert` via `POST /sync` (queues web outbox offline). Button label is **Save**. Native keeps SQLite + outbox. No `category_upsert` in the Worker yet — create/rename UI not wired on web.
 - **Transactions → Add** on web POSTs txn `upsert` (expense or income); lists via `GET /transactions`. CTA is **Add** (offline is transparent).
 - **Dashboard → Top categories** uses the same `GET /categories?month=` payload (top spent by `spent`, with bars/amounts); falls back to local SQLite when the API is empty/unavailable.
-- **Cash Flow** reads `GET /cash-flow?month=` (Income / Spend / Net + `series` for the bar chart).
+- **Cash Flow** (web intentional delta vs Copilot iOS/Mac-only): `GET /cash-flow?range=mtd|ytd|last_3_months|last_12_months|last_4_weeks&include_excluded=&comparison=` — Income / Spending / Net income, prior-range compare, excluded toggle, spending-by-category + Excluded Transactions. Legacy `?month=` still works. Bank CSV import kept (commit → needs_review). Goals deferred.
 - Empty Durable Objects auto-seed Copilot-like demo categories/budgets **and** a demo ledger when no `demo:*` fingerprints exist and there is no reviewed income/spend yet (smoke `needs_review` stubs do not block seed; never clobbers real reviewed sync data).
 
 - SPA routes are pre-rendered HTML (`/settings`, `/transactions`, etc.) and return 200 on Pages.

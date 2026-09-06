@@ -1,7 +1,10 @@
 import {
+  computeCashFlowRangePayload,
   computeCashFlowWithPrior,
   currentYearMonth,
   normalizeReviewStatus,
+  parseCashFlowRangeKey,
+  type CashFlowRangeKey,
   type Transaction,
 } from "@copilot-clone/domain";
 import type { LocalDb } from "../db/types";
@@ -27,17 +30,40 @@ function toDomainTxn(row: LocalTransaction): Transaction {
   };
 }
 
-export async function getCashFlowOverview(
-  yearMonth = currentYearMonth(),
-  dbOverride?: LocalDb,
-) {
+async function loadTxns(dbOverride?: LocalDb): Promise<Transaction[]> {
   const db = dbOverride ?? (await (await import("../db/client")).getDb());
   const rows = await db.getAllAsync<LocalTransaction>(
     "SELECT * FROM transactions",
   );
+  return rows.map(toDomainTxn);
+}
+
+export async function getCashFlowOverview(
+  yearMonth = currentYearMonth(),
+  dbOverride?: LocalDb,
+) {
+  const transactions = await loadTxns(dbOverride);
   return computeCashFlowWithPrior({
-    transactions: rows.map(toDomainTxn),
+    transactions,
     year_month: yearMonth,
+    reporting_currency: "USD",
+  });
+}
+
+export async function getCashFlowRangeOverview(
+  opts: {
+    range?: CashFlowRangeKey | string;
+    include_excluded?: boolean;
+    comparison?: boolean;
+  } = {},
+  dbOverride?: LocalDb,
+) {
+  const transactions = await loadTxns(dbOverride);
+  return computeCashFlowRangePayload({
+    transactions,
+    range: parseCashFlowRangeKey(opts.range ?? "mtd"),
+    include_excluded: opts.include_excluded === true,
+    comparison_enabled: opts.comparison !== false,
     reporting_currency: "USD",
   });
 }

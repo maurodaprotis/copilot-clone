@@ -94,9 +94,9 @@ app.get("/dashboard/spending", async (c) => {
 
 
 app.get("/cash-flow", async (c) => {
-  const month = c.req.query("month");
-  const q = month ? `?month=${encodeURIComponent(month)}` : "";
-  return proxyDo(c, `/cash-flow${q}`);
+  const sp = new URL(c.req.url).searchParams;
+  const q = sp.toString();
+  return proxyDo(c, `/cash-flow${q ? `?${q}` : ""}`);
 });
 
 app.get("/accounts", async (c) => proxyDo(c, "/accounts"));
