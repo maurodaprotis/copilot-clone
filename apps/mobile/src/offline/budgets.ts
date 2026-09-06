@@ -3,6 +3,7 @@ import {
   budgetPaceByDay,
   cumulativeSpendByDay,
   currentYearMonth,
+  shiftYearMonth,
   normalizeReviewStatus,
   totalEffectiveBudget,
   type BudgetMonth,
@@ -162,6 +163,19 @@ export async function getSpendingLine(
   };
 }
 
+/** Year-months for Copilot "all months" budget edit (±12 around center). */
+export function monthsForBudgetScope(
+  centerYearMonth: string,
+  scope: "month" | "all_months",
+): string[] {
+  if (scope === "month") return [centerYearMonth];
+  const out: string[] = [];
+  for (let i = -12; i <= 12; i++) {
+    out.push(shiftYearMonth(centerYearMonth, i));
+  }
+  return out;
+}
+
 async function setBudgetViaApi(
   input: {
     category_id: string;
@@ -169,6 +183,8 @@ async function setBudgetViaApi(
     budgeted_amount: number;
     rollover_mode?: string;
     rollover_from_prior?: number;
+    /** Copilot: apply same amount to many months ("all months"). */
+    apply_to?: "month" | "all_months";
   },
   options?: {
     apiUrl?: string;
@@ -179,26 +195,62 @@ async function setBudgetViaApi(
   const now = new Date().toISOString();
   const mode = input.rollover_mode ?? "off";
   const rollover = input.rollover_from_prior ?? 0;
-  const entityId = `${input.category_id}:${input.year_month}`;
-  const payload = {
+  const scope = input.apply_to ?? "month";
+  const months = monthsForBudgetScope(input.year_month, scope);
+
+  const mkPayload = (ym: string) => ({
     op: "budget_upsert" as const,
     category_id: input.category_id,
-    year_month: input.year_month,
+    year_month: ym,
     budgeted_amount: input.budgeted_amount,
     rollover_mode: mode,
     rollover_from_prior: rollover,
     updated_at: now,
-  };
-
-  // Try Worker first; on network fail queue localStorage web outbox (never sqlite).
-  return webSyncOrEnqueue({
-    payload,
-    entity_type: "budget",
-    entity_id: entityId,
-    apiUrl: options?.apiUrl,
-    userId: options?.userId,
-    fetchImpl: options?.fetchImpl,
   });
+
+  // Single month: keep webSyncOrEnqueue (existing outbox id + tests).
+  if (months.length === 1) {
+    const ym = months[0]!;
+    return webSyncOrEnqueue({
+      payload: mkPayload(ym),
+      entity_type: "budget",
+      entity_id: `${input.category_id}:${ym}`,
+      apiUrl: options?.apiUrl,
+      userId: options?.userId,
+      fetchImpl: options?.fetchImpl,
+    });
+  }
+
+  // All months: one batched POST /sync; enqueue each on failure.
+  const { postSyncItems } = await import("./webSyncWrite");
+  const { enqueueWebOutbox } = await import("./webOutbox");
+  const payloads = months.map(mkPayload);
+  try {
+    const result = await postSyncItems(payloads, {
+      apiUrl: options?.apiUrl,
+      userId: options?.userId,
+      fetchImpl: options?.fetchImpl,
+    });
+    if (result.ok) {
+      return {
+        outboxId: `web-api:${input.category_id}:all_months`,
+        queued: false,
+      };
+    }
+  } catch {
+    // network — enqueue below
+  }
+  for (const payload of payloads) {
+    enqueueWebOutbox({
+      entity_type: "budget",
+      entity_id: `${payload.category_id}:${payload.year_month}`,
+      payload,
+    });
+  }
+  return {
+    outboxId: `web-queued:${input.category_id}:all_months`,
+    queued: true,
+  };
 }
 
 /**
@@ -213,6 +265,8 @@ export async function setBudgetAmount(
     budgeted_amount: number;
     rollover_mode?: string;
     rollover_from_prior?: number;
+    /** Copilot budget edit: this month vs all months. */
+    apply_to?: "month" | "all_months";
   },
   dbOverride?: LocalDb,
 ): Promise<{ outboxId: string }> {
@@ -226,41 +280,47 @@ export async function setBudgetAmount(
   const outboxId = crypto.randomUUID();
   const mode = input.rollover_mode ?? "off";
   const rollover = input.rollover_from_prior ?? 0;
+  const months = monthsForBudgetScope(
+    input.year_month,
+    input.apply_to ?? "month",
+  );
 
   await db.withTransactionAsync(async () => {
-    await db.runAsync(
-      `INSERT INTO budget_months (
-        category_id, year_month, budgeted_amount, rollover_mode, rollover_from_prior
-      ) VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(category_id, year_month) DO UPDATE SET
-        budgeted_amount = excluded.budgeted_amount,
-        rollover_mode = excluded.rollover_mode,
-        rollover_from_prior = excluded.rollover_from_prior`,
-      input.category_id,
-      input.year_month,
-      input.budgeted_amount,
-      mode,
-      rollover,
-    );
+    for (const ym of months) {
+      await db.runAsync(
+        `INSERT INTO budget_months (
+          category_id, year_month, budgeted_amount, rollover_mode, rollover_from_prior
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(category_id, year_month) DO UPDATE SET
+          budgeted_amount = excluded.budgeted_amount,
+          rollover_mode = excluded.rollover_mode,
+          rollover_from_prior = excluded.rollover_from_prior`,
+        input.category_id,
+        ym,
+        input.budgeted_amount,
+        mode,
+        rollover,
+      );
 
-    const payload = JSON.stringify({
-      op: "budget_upsert",
-      category_id: input.category_id,
-      year_month: input.year_month,
-      budgeted_amount: input.budgeted_amount,
-      rollover_mode: mode,
-      rollover_from_prior: rollover,
-      updated_at: now,
-    });
+      const payload = JSON.stringify({
+        op: "budget_upsert",
+        category_id: input.category_id,
+        year_month: ym,
+        budgeted_amount: input.budgeted_amount,
+        rollover_mode: mode,
+        rollover_from_prior: rollover,
+        updated_at: now,
+      });
 
-    await db.runAsync(
-      `INSERT INTO outbox (id, entity_type, entity_id, payload, created_at, attempts, last_error)
-       VALUES (?, 'budget', ?, ?, ?, 0, NULL)`,
-      outboxId,
-      `${input.category_id}:${input.year_month}`,
-      payload,
-      now,
-    );
+      await db.runAsync(
+        `INSERT INTO outbox (id, entity_type, entity_id, payload, created_at, attempts, last_error)
+         VALUES (?, 'budget', ?, ?, ?, 0, NULL)`,
+        crypto.randomUUID(),
+        `${input.category_id}:${ym}`,
+        payload,
+        now,
+      );
+    }
   });
 
   return { outboxId };

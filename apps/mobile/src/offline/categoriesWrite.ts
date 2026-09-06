@@ -37,7 +37,7 @@ export async function upsertCategory(
     id,
     name: input.name.trim(),
     group_id: input.group_id ?? (isIncome ? "grp-income" : "grp-other"),
-    emoji: input.emoji ?? (isIncome ? "💵" : "📁"),
+    emoji: input.emoji ?? (isIncome ? "💵" : "💸"),
     color: input.color ?? (isIncome ? "#10B981" : "#94a3b8"),
     is_income_category: isIncome,
     exclude_from_budget:

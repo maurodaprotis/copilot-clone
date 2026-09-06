@@ -3,6 +3,7 @@ import { createMemoryDb } from "../src/db/memory";
 import {
   applyRemoteCategoriesSnapshot,
   getCategoryBudgetOverview,
+  monthsForBudgetScope,
   setBudgetAmount,
   __test,
 } from "../src/offline/budgets";
@@ -76,6 +77,56 @@ describe("budgets web API helpers", () => {
     __resetWebOutboxForTests();
   });
 });
+
+
+  it("setBudgetViaApi all_months posts multiple budget_upsert items", async () => {
+    const calls: { body: string }[] = [];
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      calls.push({ body: String(init?.body ?? "") });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          saved: Array.from({ length: 25 }, (_, i) => `cat-dining:m${i}`),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+
+    const result = await __test.setBudgetViaApi(
+      {
+        category_id: "cat-dining",
+        year_month: "2026-09",
+        budgeted_amount: 150,
+        apply_to: "all_months",
+      },
+      {
+        apiUrl: "https://example.test",
+        userId: "demo-user",
+        fetchImpl,
+      },
+    );
+
+    expect(result.queued).toBeFalsy();
+    expect(calls).toHaveLength(1);
+    const body = JSON.parse(calls[0]!.body);
+    expect(body.items).toHaveLength(monthsForBudgetScope("2026-09", "all_months").length);
+    expect(body.items[0]).toMatchObject({
+      op: "budget_upsert",
+      category_id: "cat-dining",
+      budgeted_amount: 150,
+    });
+    expect(body.items.some((i: { year_month: string }) => i.year_month === "2026-09")).toBe(
+      true,
+    );
+    expect(body.items.some((i: { year_month: string }) => i.year_month === "2025-09")).toBe(
+      true,
+    );
+  });
+
+  it("monthsForBudgetScope month vs all_months", () => {
+    expect(monthsForBudgetScope("2026-09", "month")).toEqual(["2026-09"]);
+    expect(monthsForBudgetScope("2026-09", "all_months")).toHaveLength(25);
+  });
 
 describe("budgets native sqlite path (memory db)", () => {
   it("setBudgetAmount with dbOverride still writes local + outbox", async () => {
@@ -171,4 +222,52 @@ describe("budgets native sqlite path (memory db)", () => {
     const overview = await getCategoryBudgetOverview("2026-09", db);
     expect(overview.rows.some((r) => r.category.id === "c1")).toBe(true);
   });
+
+  it("setBudgetAmount all_months writes many local budget rows", async () => {
+    const db = createMemoryDb();
+    const ym = "2026-09";
+    for (const g of SEED_CATEGORY_GROUPS) {
+      await db.runAsync(
+        `INSERT OR IGNORE INTO category_groups (id, name, sort_order, is_system)
+         VALUES (?, ?, ?, ?)`,
+        g.id,
+        g.name,
+        g.sort_order,
+        g.is_system ? 1 : 0,
+      );
+    }
+    for (const c of SEED_CATEGORIES) {
+      await db.runAsync(
+        `INSERT OR IGNORE INTO categories (
+          id, group_id, name, emoji, color,
+          exclude_from_budget, is_income_category, archived, sort_order
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        c.id,
+        c.group_id,
+        c.name,
+        c.emoji,
+        c.color,
+        c.exclude_from_budget ? 1 : 0,
+        c.is_income_category ? 1 : 0,
+        c.archived ? 1 : 0,
+        c.sort_order,
+      );
+    }
+    await setBudgetAmount(
+      {
+        category_id: "cat-dining",
+        year_month: ym,
+        budgeted_amount: 150,
+        apply_to: "all_months",
+      },
+      db,
+    );
+    const rows = await db.getAllAsync<{ year_month: string; budgeted_amount: number }>(
+      "SELECT year_month, budgeted_amount FROM budget_months WHERE category_id = ?",
+      "cat-dining",
+    );
+    expect(rows.length).toBe(25);
+    expect(rows.every((r) => r.budgeted_amount === 150)).toBe(true);
+  });
+
 });
