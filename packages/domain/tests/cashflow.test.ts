@@ -3,6 +3,8 @@ import {
   computeCashFlow,
   cashFlowSeries,
   computeCashFlowWithPrior,
+  computeCashFlowRangePayload,
+  resolveCashFlowWindow,
   priorYearMonth,
   shiftYearMonth,
   seedDemoTransactions,
@@ -131,5 +133,88 @@ describe("cashFlowSeries + demo seed", () => {
     expect(series[2]!.income).toBeGreaterThan(0);
     expect(series[2]!.spend).toBeGreaterThan(0);
     expect(series[2]!.net).toBe(series[2]!.income - series[2]!.spend);
+  });
+});
+
+describe("Help Center cash flow ranges", () => {
+  it("resolves MTD with same-day prior month comparison", () => {
+    const now = new Date(Date.UTC(2026, 6, 24)); // July 24
+    const w = resolveCashFlowWindow("mtd", now);
+    expect(w.start).toBe("2026-07-01");
+    expect(w.end).toBe("2026-07-24");
+    expect(w.prior_start).toBe("2026-06-01");
+    expect(w.prior_end).toBe("2026-06-24");
+  });
+
+  it("resolves YTD and last 4 weeks windows", () => {
+    const now = new Date(Date.UTC(2026, 8, 5)); // Sep 5
+    const ytd = resolveCashFlowWindow("ytd", now);
+    expect(ytd.start).toBe("2026-01-01");
+    expect(ytd.end).toBe("2026-09-05");
+    expect(ytd.prior_start).toBe("2025-01-01");
+    expect(ytd.prior_end).toBe("2025-09-05");
+
+    const w4 = resolveCashFlowWindow("last_4_weeks", now);
+    expect(w4.end).toBe("2026-09-05");
+    expect(w4.start).toBe("2026-08-09");
+  });
+
+  it("includes excluded spend when toggled and breaks down by category", () => {
+    const transactions = [
+      txn({
+        id: "s1",
+        type: "regular",
+        amount_reporting: 100,
+        category_id: "c-food",
+        posted_at: "2026-09-02T00:00:00Z",
+      }),
+      txn({
+        id: "ex",
+        type: "regular",
+        review_status: "excluded",
+        amount_reporting: 40,
+        category_id: "c-food",
+        posted_at: "2026-09-03T00:00:00Z",
+      }),
+      txn({
+        id: "i1",
+        type: "income",
+        amount_reporting: 1000,
+        posted_at: "2026-09-01T00:00:00Z",
+      }),
+    ];
+    const categories = [
+      {
+        id: "c-food",
+        group_id: "g1",
+        name: "Food",
+        emoji: "🍔",
+        color: "#f00",
+        exclude_from_budget: false,
+        is_income_category: false,
+        archived: false,
+        sort_order: 0,
+      },
+    ];
+    const off = computeCashFlowRangePayload({
+      transactions,
+      categories,
+      range: "mtd",
+      include_excluded: false,
+      now: new Date(Date.UTC(2026, 8, 5)),
+    });
+    expect(off.spend).toBe(100);
+    expect(off.excluded_spend).toBe(40);
+    expect(off.income).toBe(1000);
+    expect(off.spending_by_category[0]?.amount).toBe(100);
+
+    const on = computeCashFlowRangePayload({
+      transactions,
+      categories,
+      range: "mtd",
+      include_excluded: true,
+      now: new Date(Date.UTC(2026, 8, 5)),
+    });
+    expect(on.spend).toBe(140);
   });
 });

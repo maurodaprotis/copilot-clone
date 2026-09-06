@@ -2,19 +2,25 @@ import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import {
-  currentYearMonth,
-  shiftYearMonth,
-  type CashFlowComparison,
-  type CashFlowSummary,
+  CASH_FLOW_RANGE_KEYS,
+  CASH_FLOW_RANGE_LABELS,
+  CASH_FLOW_RANGE_SHORT,
+  type CashFlowCategoryBreakdown,
+  type CashFlowRangeKey,
+  type CashFlowRangePayload,
+  type CashFlowRangeSeriesPoint,
 } from "@copilot-clone/domain";
-import { API_URL, DEMO_USER_ID, getApiUserId } from "../../src/config";
-import { getCashFlowOverview } from "../../src/offline/cashflow";
+import { API_URL, getApiUserId } from "../../src/config";
+import { getCashFlowRangeOverview } from "../../src/offline/cashflow";
 import { colors, radius, spacing, type } from "../../src/theme";
-import { Card, Screen, ScreenHeader, SegmentedControl } from "../../src/ui";
-
-type CashFlowPayload = CashFlowComparison & {
-  series?: CashFlowSummary[];
-};
+import {
+  Card,
+  ProgressBar,
+  Screen,
+  ScreenHeader,
+  SegmentedControl,
+  Toggle,
+} from "../../src/ui";
 
 function usd(n: number): string {
   const sign = n < 0 ? "-" : "";
@@ -27,137 +33,222 @@ function pct(n: number | null): string {
   return `${sign}${n.toFixed(0)}%`;
 }
 
-function monthLabel(ym: string): string {
-  const [y, m] = ym.split("-").map(Number);
-  if (!y || !m) return ym;
-  const names = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-  return `${names[m - 1]}`;
+const RANGE_OPTIONS = CASH_FLOW_RANGE_KEYS.map((k) => CASH_FLOW_RANGE_SHORT[k]);
+
+function shortToKey(short: string): CashFlowRangeKey {
+  const found = CASH_FLOW_RANGE_KEYS.find((k) => CASH_FLOW_RANGE_SHORT[k] === short);
+  return found ?? "mtd";
 }
 
-function CashFlowBars({ series }: { series: CashFlowSummary[] }) {
-  const maxY = Math.max(1, ...series.flatMap((s) => [s.income, s.spend, Math.abs(s.net)]));
-  const chartH = 120;
+function MetricCard({
+  label,
+  value,
+  valueColor,
+  hint,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  valueColor?: string;
+  hint?: string;
+  onPress?: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} style={{ flex: 1 }}>
+      <Card style={styles.metricCard}>
+        <View style={styles.metricTop}>
+          <Text style={styles.cardLabel}>{label}</Text>
+          {onPress ? <Text style={styles.viewMore}>View More</Text> : null}
+        </View>
+        <Text style={[styles.cardValue, valueColor ? { color: valueColor } : null]}>
+          {value}
+        </Text>
+        {hint ? <Text style={styles.cardHint}>{hint}</Text> : null}
+      </Card>
+    </Pressable>
+  );
+}
+
+function AreaChart({
+  title,
+  series,
+  showComparison,
+  priorSeries,
+  mode,
+}: {
+  title: string;
+  series: CashFlowRangeSeriesPoint[];
+  showComparison: boolean;
+  priorSeries?: CashFlowRangeSeriesPoint[];
+  mode: "income" | "spend" | "net";
+}) {
+  const values = series.map((s) =>
+    mode === "income" ? s.income : mode === "spend" ? s.spend : s.net,
+  );
+  const priorValues =
+    priorSeries?.map((s) =>
+      mode === "income" ? s.income : mode === "spend" ? s.spend : s.net,
+    ) ?? [];
+  const maxY = Math.max(
+    1,
+    ...values.map((v) => Math.abs(v)),
+    ...priorValues.map((v) => Math.abs(v)),
+  );
+  const chartH = 110;
+  const barColor =
+    mode === "income"
+      ? colors.incomeGreen
+      : mode === "spend"
+        ? colors.text
+        : colors.accentBlue;
 
   return (
-    <View style={styles.chartWrap}>
-      <View style={styles.chartLegend}>
-        <Text style={styles.legendIncome}>● Income</Text>
-        <Text style={styles.legendSpend}>● Spend</Text>
-        <Text style={styles.legendNet}>● Net</Text>
-      </View>
+    <Card style={styles.chartCard}>
+      <Text style={styles.chartTitle}>{title}</Text>
       <View style={[styles.chartRow, { height: chartH }]}>
-        {series.map((s) => {
-          const incomeH = Math.max(2, (s.income / maxY) * (chartH - 18));
-          const spendH = Math.max(2, (s.spend / maxY) * (chartH - 18));
-          const netH = Math.max(2, (Math.abs(s.net) / maxY) * (chartH - 18));
+        {series.map((s, i) => {
+          const raw = values[i] ?? 0;
+          const h = Math.max(2, (Math.abs(raw) / maxY) * (chartH - 20));
+          const priorH =
+            showComparison && priorValues[i] != null
+              ? Math.max(2, (Math.abs(priorValues[i]!) / maxY) * (chartH - 20))
+              : 0;
+          const stack = mode === "spend" ? s.by_category?.slice(0, 5) ?? [] : [];
+          const stackTotal = stack.reduce((a, c) => a + Math.max(0, c.amount), 0) || 1;
           return (
-            <View key={s.year_month} style={styles.barCol}>
+            <View key={s.key} style={styles.barCol}>
               <View style={styles.barCluster}>
-                <View
-                  style={[
-                    styles.bar,
-                    {
-                      height: incomeH,
-                      backgroundColor: colors.incomeGreen,
-                    },
-                  ]}
-                />
-                <View
-                  style={[
-                    styles.bar,
-                    {
-                      height: spendH,
-                      backgroundColor: colors.text,
-                    },
-                  ]}
-                />
-                <View
-                  style={[
-                    styles.bar,
-                    {
-                      height: netH,
-                      backgroundColor:
-                        s.net >= 0 ? colors.accentBlue : colors.overBudgetRed,
-                    },
-                  ]}
-                />
+                {showComparison && priorH > 0 ? (
+                  <View
+                    style={[
+                      styles.priorGhost,
+                      { height: priorH, borderColor: colors.textTertiary },
+                    ]}
+                  />
+                ) : null}
+                {mode === "spend" && stack.length > 0 ? (
+                  <View style={[styles.stackBar, { height: h }]}>
+                    {stack.map((c) => {
+                      const segH = Math.max(
+                        1,
+                        (Math.max(0, c.amount) / stackTotal) * h,
+                      );
+                      return (
+                        <View
+                          key={`${s.key}-${c.category_id ?? "none"}`}
+                          style={{
+                            height: segH,
+                            width: "100%",
+                            backgroundColor: c.color || barColor,
+                          }}
+                        />
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <View
+                    style={[
+                      styles.bar,
+                      {
+                        height: h,
+                        backgroundColor:
+                          mode === "net" && raw < 0
+                            ? colors.overBudgetRed
+                            : barColor,
+                      },
+                    ]}
+                  />
+                )}
               </View>
-              <Text style={styles.barLabel}>{monthLabel(s.year_month)}</Text>
+              <Text style={styles.barLabel}>{s.label}</Text>
             </View>
           );
         })}
       </View>
-    </View>
+    </Card>
   );
 }
 
-function fallbackSeries(data: CashFlowComparison): CashFlowSummary[] {
-  const months = [2, 1, 0].map((i) => shiftYearMonth(data.year_month, -i));
-  return months.map((ym) => {
-    if (ym === data.year_month) {
-      return {
-        year_month: ym,
-        income: data.income,
-        spend: data.spend,
-        net: data.net,
-        reporting_currency: data.reporting_currency,
-      };
-    }
-    if (ym === data.prior.year_month) return data.prior;
-    return {
-      year_month: ym,
-      income: 0,
-      spend: 0,
-      net: 0,
-      reporting_currency: data.reporting_currency,
-    };
-  });
+function CategoryBreakdown({
+  rows,
+  excludedSpend,
+}: {
+  rows: CashFlowCategoryBreakdown[];
+  excludedSpend: number;
+}) {
+  const max = Math.max(1, ...rows.map((r) => Math.abs(r.amount)));
+  return (
+    <Card style={styles.breakdownCard}>
+      <Text style={styles.chartTitle}>Spending by category</Text>
+      {rows.length === 0 ? (
+        <Text style={styles.cardHint}>No spending in this range</Text>
+      ) : (
+        rows.slice(0, 8).map((r) => (
+          <View key={r.category_id ?? r.name} style={styles.catRow}>
+            <Text style={styles.catEmoji}>{r.emoji}</Text>
+            <View style={{ flex: 1 }}>
+              <View style={styles.catLabelRow}>
+                <Text style={styles.catName}>{r.name}</Text>
+                <Text style={styles.catAmt}>{usd(r.amount)}</Text>
+              </View>
+              <ProgressBar
+                progress={Math.abs(r.amount) / max}
+                color={r.color || colors.text}
+              />
+            </View>
+          </View>
+        ))
+      )}
+      <View style={styles.excludedBlock}>
+        <Text style={styles.chartTitle}>Excluded Transactions</Text>
+        <Text style={styles.cardHint}>
+          {usd(excludedSpend)} excluded from spend
+          {excludedSpend === 0 ? " (none in range)" : ""}
+        </Text>
+      </View>
+    </Card>
+  );
 }
 
 export default function CashFlowScreen() {
-  const [month, setMonth] = useState(currentYearMonth());
-  const [data, setData] = useState<CashFlowPayload | null>(null);
+  const [range, setRange] = useState<CashFlowRangeKey>("mtd");
+  const [comparison, setComparison] = useState(true);
+  const [includeExcluded, setIncludeExcluded] = useState(false);
+  const [detail, setDetail] = useState<"income" | "spend" | "net" | null>(null);
+  const [data, setData] = useState<CashFlowRangePayload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [source, setSource] = useState<"api" | "local">("local");
-  const [range, setRange] = useState("1M");
 
   const reload = useCallback(async () => {
     setLoading(true);
     try {
+      const qs = new URLSearchParams({
+        range,
+        include_excluded: includeExcluded ? "true" : "false",
+        comparison: comparison ? "true" : "false",
+      });
       try {
         const res = await fetch(
-          `${API_URL.replace(/\/$/, "")}/cash-flow?month=${encodeURIComponent(month)}`,
+          `${API_URL.replace(/\/$/, "")}/cash-flow?${qs.toString()}`,
           { headers: { "x-user-id": getApiUserId() } },
         );
         if (res.ok) {
-          const json = (await res.json()) as CashFlowPayload;
+          const json = (await res.json()) as CashFlowRangePayload;
           setData(json);
-          setSource("api");
           return;
         }
       } catch {
-        // fall through to local
+        // fall through
       }
-      const local = await getCashFlowOverview(month);
+      const local = await getCashFlowRangeOverview({
+        range,
+        include_excluded: includeExcluded,
+        comparison,
+      });
       setData(local);
-      setSource("local");
     } finally {
       setLoading(false);
     }
-  }, [month]);
+  }, [range, includeExcluded, comparison]);
 
   useFocusEffect(
     useCallback(() => {
@@ -165,121 +256,180 @@ export default function CashFlowScreen() {
     }, [reload]),
   );
 
-  const chartSeries = useMemo(() => {
-    if (!data) return [];
-    const full = data.series && data.series.length > 0 ? data.series : fallbackSeries(data);
-    if (range === "1M") return full.slice(-3); // still show a bit of history for density
-    if (range === "3M") return full.slice(-3);
-    return full;
-  }, [data, range]);
+  const series = useMemo(() => data?.series ?? [], [data]);
+
+  const comparisonHint = useCallback(
+    (delta: number, deltaPct: number | null, priorValue: string) => {
+      if (!comparison || !data) return undefined;
+      const pctPart = deltaPct == null ? "" : ` (${pct(deltaPct)})`;
+      return `prior ${priorValue} · Δ ${usd(delta)}${pctPart}`;
+    },
+    [comparison, data],
+  );
 
   return (
     <Screen refreshing={loading} onRefresh={() => void reload()}>
       <ScreenHeader title="Cash Flow" />
 
-      <View style={styles.monthRow}>
-        <Pressable
-          style={styles.chip}
-          onPress={() => setMonth(shiftYearMonth(month, -1))}
-        >
-          <Text style={styles.chipText}>←</Text>
-        </Pressable>
-        <Text style={styles.monthLabel}>{month}</Text>
-        <Pressable
-          style={styles.chip}
-          onPress={() => setMonth(shiftYearMonth(month, 1))}
-        >
-          <Text style={styles.chipText}>→</Text>
-        </Pressable>
-      </View>
+      <Text style={styles.subtitle}>
+        {data
+          ? `${CASH_FLOW_RANGE_LABELS[range]} · ${data.start} → ${data.end}`
+          : CASH_FLOW_RANGE_LABELS[range]}
+      </Text>
+
       <SegmentedControl
-        options={["1M", "3M", "YTD", "1Y"]}
-        value={range}
-        onChange={setRange}
+        options={RANGE_OPTIONS}
+        value={CASH_FLOW_RANGE_SHORT[range]}
+        onChange={(v) => setRange(shortToKey(v))}
         style={{ marginBottom: spacing.sm }}
       />
 
-      <View style={styles.metricsRow}>
-        <Card style={[styles.metricCard, styles.incomeCard]}>
-          <Text style={styles.cardLabel}>Income</Text>
-          <Text style={[styles.cardValue, { color: colors.incomeGreen }]}>
-            {usd(data?.income ?? 0)}
-          </Text>
-          {data ? (
-            <Text style={styles.cardHint}>
-              prior {usd(data.prior.income)} · Δ {usd(data.income_delta)}
-            </Text>
-          ) : null}
-        </Card>
-        <Card style={[styles.metricCard, styles.spendCard]}>
-          <Text style={styles.cardLabel}>Spend</Text>
-          <Text style={styles.cardValue}>{usd(data?.spend ?? 0)}</Text>
-          {data ? (
-            <Text style={styles.cardHint}>
-              prior {usd(data.prior.spend)} · Δ {usd(data.spend_delta)}
-            </Text>
-          ) : null}
-        </Card>
-        <Card style={[styles.metricCard, styles.netCard]}>
-          <Text style={styles.cardLabel}>Net</Text>
-          <Text
-            style={[
-              styles.cardValue,
-              {
-                color: (data?.net ?? 0) < 0 ? colors.overBudgetRed : colors.incomeGreen,
-              },
-            ]}
-          >
-            {usd(data?.net ?? 0)}
-          </Text>
-          {data ? (
-            <Text style={styles.cardHint}>
-              vs prior {usd(data.net_delta)} ({pct(data.net_delta_pct)})
-            </Text>
-          ) : !loading ? (
-            <Text style={styles.cardHint}>Import or sync to see cash flow</Text>
-          ) : null}
-        </Card>
+      <View style={styles.toggleRow}>
+        <View style={styles.toggleItem}>
+          <Text style={styles.toggleLabel}>Compare prior range</Text>
+          <Toggle value={comparison} onChange={setComparison} />
+        </View>
+        <View style={styles.toggleItem}>
+          <Text style={styles.toggleLabel}>Show excluded spend</Text>
+          <Toggle value={includeExcluded} onChange={setIncludeExcluded} />
+        </View>
       </View>
 
-      <Card style={styles.chartCard}>
-        <Text style={styles.chartTitle}>Income / Spend / Net</Text>
-        {chartSeries.length > 0 ? (
-          <CashFlowBars series={chartSeries} />
-        ) : (
+      <View style={styles.metricsRow}>
+        <MetricCard
+          label="Income"
+          value={usd(data?.income ?? 0)}
+          valueColor={colors.incomeGreen}
+          hint={
+            comparison && data
+              ? comparisonHint(data.income_delta, null, usd(data.prior.income))
+              : undefined
+          }
+          onPress={() => setDetail(detail === "income" ? null : "income")}
+        />
+        <MetricCard
+          label="Spending"
+          value={usd(data?.spend ?? 0)}
+          hint={
+            comparison && data
+              ? comparisonHint(data.spend_delta, null, usd(data.prior.spend))
+              : undefined
+          }
+          onPress={() => setDetail(detail === "spend" ? null : "spend")}
+        />
+        <MetricCard
+          label="Net income"
+          value={usd(data?.net ?? 0)}
+          valueColor={
+            (data?.net ?? 0) < 0 ? colors.overBudgetRed : colors.incomeGreen
+          }
+          hint={
+            comparison && data
+              ? comparisonHint(data.net_delta, data.net_delta_pct, usd(data.prior.net))
+              : !loading && !data
+                ? "Import or sync to see cash flow"
+                : undefined
+          }
+          onPress={() => setDetail(detail === "net" ? null : "net")}
+        />
+      </View>
+
+      {series.length > 0 ? (
+        <>
+          <AreaChart
+            title="Income"
+            series={series}
+            showComparison={comparison}
+            mode="income"
+          />
+          <AreaChart
+            title="Spending"
+            series={series}
+            showComparison={comparison}
+            mode="spend"
+          />
+          <AreaChart
+            title="Net income"
+            series={series}
+            showComparison={comparison}
+            mode="net"
+          />
+        </>
+      ) : (
+        <Card style={styles.chartCard}>
           <View style={styles.emptyChart}>
             <Text style={styles.emptyChartText}>
               {loading ? "Loading…" : "No cash-flow series yet"}
             </Text>
           </View>
-        )}
-      </Card>
+        </Card>
+      )}
+
+      {(detail === "spend" || detail === null) && data ? (
+        <CategoryBreakdown
+          rows={data.spending_by_category ?? []}
+          excludedSpend={data.excluded_spend ?? 0}
+        />
+      ) : null}
+
+      {detail === "income" && data ? (
+        <Card style={styles.breakdownCard}>
+          <Text style={styles.chartTitle}>Key Metrics · Income</Text>
+          <Text style={styles.cardHint}>
+            Total {usd(data.income)} · Prior range {usd(data.prior.income)} · Δ{" "}
+            {usd(data.income_delta)}
+          </Text>
+        </Card>
+      ) : null}
+
+      {detail === "net" && data ? (
+        <Card style={styles.breakdownCard}>
+          <Text style={styles.chartTitle}>Key Metrics · Net income</Text>
+          <Text style={styles.cardHint}>
+            Income {usd(data.income)} − Spending {usd(data.spend)} ={" "}
+            {usd(data.net)}
+          </Text>
+          {comparison ? (
+            <Text style={styles.cardHint}>
+              Prior net {usd(data.prior.net)} · Δ {usd(data.net_delta)} (
+              {pct(data.net_delta_pct)})
+            </Text>
+          ) : null}
+        </Card>
+      ) : null}
 
       <Text style={styles.rules}>
-        Income = type income. Spend = regular non-excluded (refunds net).
-        Transfers omitted. Net = Income − Spend.
+        Web Cash Flow is an intentional clone delta (Copilot ships Cash Flow on
+        iOS/Mac only). Ranges match Help Center. Transfers omitted. Net income =
+        Income − Spending. Bank CSV import remains under More → Import CSV
+        (commit → needs_review).
       </Text>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  monthRow: {
+  subtitle: {
+    ...type.footnote,
+    color: colors.textTertiary,
+    marginBottom: spacing.sm,
+  },
+  toggleRow: {
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  toggleItem: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: spacing.sm,
-  },
-  chip: {
     backgroundColor: colors.bgCard,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
+    borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 8,
   },
-  chipText: { ...type.footnote, fontWeight: "600", color: colors.text },
-  monthLabel: { ...type.headline },
+  toggleLabel: { ...type.callout, fontWeight: "600", color: colors.text },
   metricsRow: {
     flexDirection: "row",
     gap: spacing.sm,
@@ -289,25 +439,25 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.sm,
-    minHeight: 88,
+    minHeight: 92,
   },
-  incomeCard: {},
-  spendCard: {},
-  netCard: {},
+  metricTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 2,
+    gap: 4,
+  },
+  viewMore: { ...type.caption, color: colors.accentBlue, fontWeight: "600" },
   cardLabel: { ...type.caption, marginBottom: 2 },
   cardValue: { ...type.title3, fontSize: 18, lineHeight: 22 },
   cardHint: { ...type.footnote, marginTop: 4, fontSize: 11, lineHeight: 14 },
   chartCard: { marginBottom: spacing.sm, paddingVertical: spacing.md },
-  chartTitle: { ...type.sectionLabel, marginBottom: spacing.sm, color: colors.textTertiary },
-  chartWrap: { gap: spacing.sm },
-  chartLegend: {
-    flexDirection: "row",
-    gap: spacing.md,
-    marginBottom: 4,
+  chartTitle: {
+    ...type.sectionLabel,
+    marginBottom: spacing.sm,
+    color: colors.textTertiary,
   },
-  legendIncome: { ...type.footnote, color: colors.incomeGreen, fontWeight: "600" },
-  legendSpend: { ...type.footnote, color: colors.text, fontWeight: "600" },
-  legendNet: { ...type.footnote, color: colors.accentBlue, fontWeight: "600" },
   chartRow: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -323,10 +473,24 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   bar: {
-    width: 6,
+    width: 10,
     borderTopLeftRadius: 2,
     borderTopRightRadius: 2,
     minHeight: 2,
+  },
+  stackBar: {
+    width: 12,
+    borderTopLeftRadius: 2,
+    borderTopRightRadius: 2,
+    overflow: "hidden",
+    justifyContent: "flex-end",
+  },
+  priorGhost: {
+    width: 10,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderRadius: 2,
+    opacity: 0.7,
   },
   barLabel: { ...type.caption, fontSize: 10, marginTop: 2 },
   emptyChart: {
@@ -337,5 +501,26 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   emptyChartText: { ...type.footnote },
+  breakdownCard: { marginBottom: spacing.sm, paddingVertical: spacing.md },
+  catRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  catEmoji: { fontSize: 18, width: 24, textAlign: "center" },
+  catLabelRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  catName: { ...type.callout, fontWeight: "600" },
+  catAmt: { ...type.callout, fontWeight: "600" },
+  excludedBlock: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
   rules: { ...type.footnote, marginTop: spacing.sm, lineHeight: 16 },
 });

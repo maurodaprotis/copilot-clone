@@ -12,7 +12,9 @@ import {
   buildCategoryBudgetRows,
   budgetPaceByDay,
   cashFlowSeries,
+  computeCashFlowRangePayload,
   computeCashFlowWithPrior,
+  parseCashFlowRangeKey,
   cumulativeSpendByDay,
   seedDemoTransactions,
   currentYearMonth,
@@ -1303,21 +1305,64 @@ export class UserDO extends DurableObject<Env> {
     );
   }
 
-  private cashFlowPayload(yearMonth: string) {
+  private cashFlowPayload(opts: {
+    yearMonth: string;
+    range?: string | null;
+    includeExcluded?: boolean;
+    comparison?: boolean;
+  }) {
     const transactions = this.listTransactionsDomain();
+    const categories = this.listCategories();
     const settings = this.getSettings();
+    const include_excluded = opts.includeExcluded === true;
+    // Prefer Help Center range when provided; keep month path for legacy clients.
+    if (opts.range != null && String(opts.range).trim() !== "") {
+      const range = parseCashFlowRangeKey(opts.range);
+      return computeCashFlowRangePayload({
+        transactions,
+        categories,
+        range,
+        include_excluded,
+        comparison_enabled: opts.comparison !== false,
+        reporting_currency: settings.reporting_currency,
+      });
+    }
     const comparison = computeCashFlowWithPrior({
       transactions,
-      year_month: yearMonth,
+      year_month: opts.yearMonth,
       reporting_currency: settings.reporting_currency,
+      include_excluded,
     });
     const series = cashFlowSeries({
       transactions,
-      year_month: yearMonth,
+      year_month: opts.yearMonth,
       months: 6,
       reporting_currency: settings.reporting_currency,
+      include_excluded,
     });
-    return { ...comparison, series };
+    const rangePayload = computeCashFlowRangePayload({
+      transactions,
+      categories,
+      range: "mtd",
+      include_excluded,
+      comparison_enabled: opts.comparison !== false,
+      reporting_currency: settings.reporting_currency,
+    });
+    return {
+      ...comparison,
+      series,
+      // Help Center fields also present on legacy month responses
+      range: rangePayload.range,
+      range_label: rangePayload.range_label,
+      start: rangePayload.start,
+      end: rangePayload.end,
+      prior_start: rangePayload.prior_start,
+      prior_end: rangePayload.prior_end,
+      include_excluded,
+      comparison_enabled: opts.comparison !== false,
+      excluded_spend: rangePayload.excluded_spend,
+      spending_by_category: rangePayload.spending_by_category,
+    };
   }
 
   private accountsPayload() {
@@ -1632,7 +1677,21 @@ export class UserDO extends DurableObject<Env> {
 
     if (request.method === "GET" && url.pathname === "/cash-flow") {
       const yearMonth = url.searchParams.get("month") ?? currentYearMonth();
-      return Response.json(this.cashFlowPayload(yearMonth));
+      const range = url.searchParams.get("range");
+      const includeExcluded =
+        url.searchParams.get("include_excluded") === "1" ||
+        url.searchParams.get("include_excluded") === "true";
+      const comparisonRaw = url.searchParams.get("comparison");
+      const comparison =
+        comparisonRaw == null ? true : comparisonRaw !== "0" && comparisonRaw !== "false";
+      return Response.json(
+        this.cashFlowPayload({
+          yearMonth,
+          range,
+          includeExcluded,
+          comparison,
+        }),
+      );
     }
 
     if (request.method === "GET" && url.pathname === "/accounts") {
