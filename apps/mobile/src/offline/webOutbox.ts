@@ -133,13 +133,15 @@ export async function drainWebOutbox(
     return { pushed: 0 };
   }
 
-  if (!result.ok) {
+  if (!result.ok || (items.length > 0 && !(result.saved && result.saved.length > 0))) {
     const next = readAll().map((r) =>
       rows.some((x) => x.id === r.id)
         ? {
             ...r,
             attempts: r.attempts + 1,
-            last_error: "transport failed",
+            last_error: !result.ok
+              ? "transport failed"
+              : "transport returned empty saved",
           }
         : r,
     );

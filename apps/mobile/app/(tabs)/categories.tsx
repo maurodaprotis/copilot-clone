@@ -15,6 +15,7 @@ import {
   getCategoryBudgetOverview,
   setBudgetAmount,
 } from "../../src/offline/budgets";
+import { upsertCategory } from "../../src/offline/categoriesWrite";
 import { syncOutbox } from "../../src/offline/syncOutbox";
 import { createApiTransport } from "../../src/sync/apiTransport";
 import { pullCategoriesFromApi } from "../../src/sync/pullCategories";
@@ -80,8 +81,14 @@ export default function CategoriesScreen() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [source, setSource] = useState<"api" | "local">("local");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newGroupId, setNewGroupId] = useState("grp-other");
+  const [newIncome, setNewIncome] = useState(false);
+  const [groupList, setGroupList] = useState<CategoryGroup[]>([]);
 
   const applyOverview = useCallback((overview: Overview) => {
+    setGroupList(overview.groups);
     const byGroup = overview.groups
       .slice()
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -158,11 +165,57 @@ export default function CategoriesScreen() {
     }
   }
 
+  async function onCreateCategory() {
+    const name = newName.trim();
+    if (!name) {
+      setMsg("Enter a category name");
+      return;
+    }
+    setSaving(true);
+    setMsg(null);
+    try {
+      const isIncome = newIncome;
+      const groupId = isIncome ? "grp-income" : newGroupId;
+      const { id } = await upsertCategory({
+        name,
+        group_id: groupId,
+        is_income_category: isIncome,
+        exclude_from_budget: isIncome,
+      });
+      await syncOutbox(createApiTransport()).catch(() => ({ pushed: 0 }));
+      setCreateOpen(false);
+      setNewName("");
+      setNewIncome(false);
+      await reload();
+      setMsg(`Created ${name}`);
+      void id;
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const hasRows = groups.some((g) => g.rows.length > 0);
 
   return (
     <Screen refreshing={loading} onRefresh={() => void reload()}>
-      <ScreenHeader title="Categories" />
+      <ScreenHeader
+        title="Categories"
+        right={
+          <PrimaryButton
+            label="+ Add"
+            onPress={() => {
+              setCreateOpen(true);
+              setMsg(null);
+              const firstExpense =
+                groupList.find((g) => g.id !== "grp-income")?.id ?? "grp-other";
+              setNewGroupId(firstExpense);
+            }}
+            style={{ minHeight: 36, paddingVertical: 8, minWidth: 64 }}
+          />
+        }
+      />
 
       <Card style={styles.summary}>
         <View style={styles.summaryCell}>
@@ -244,8 +297,12 @@ export default function CategoriesScreen() {
       )}
 
       <Modal visible={!!editRow} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+        <View style={styles.modalBackdrop} pointerEvents="box-none">
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => setEditRow(null)}
+          />
+          <View style={styles.modalCard} pointerEvents="auto">
             <Text style={styles.modalTitle}>
               {editRow?.category.emoji} {editRow?.category.name}
             </Text>
@@ -270,6 +327,72 @@ export default function CategoriesScreen() {
               <PrimaryButton
                 label="Save"
                 onPress={() => void onSaveBudget()}
+                loading={saving}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={createOpen} transparent animationType="fade">
+        <View style={styles.modalBackdrop} pointerEvents="box-none">
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => setCreateOpen(false)}
+          />
+          <View style={styles.modalCard} pointerEvents="auto">
+            <Text style={styles.modalTitle}>New category</Text>
+            <Text style={styles.modalHint}>Saved to the Worker (syncs on web)</Text>
+            <TextInput
+              style={styles.input}
+              value={newName}
+              onChangeText={setNewName}
+              placeholder="Name (e.g. Coffee)"
+              placeholderTextColor={colors.textTertiary}
+            />
+            <View style={styles.modalActions}>
+              <PrimaryButton
+                label={newIncome ? "Income" : "Expense"}
+                variant="secondary"
+                onPress={() => {
+                  setNewIncome((v) => !v);
+                  if (!newIncome) setNewGroupId("grp-income");
+                }}
+                style={{ flex: 1 }}
+              />
+            </View>
+            {!newIncome ? (
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                {groupList
+                  .filter((g) => g.id !== "grp-income")
+                  .map((g) => (
+                    <Pressable
+                      key={g.id}
+                      onPress={() => setNewGroupId(g.id)}
+                      style={{
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        borderRadius: 999,
+                        backgroundColor:
+                          newGroupId === g.id ? colors.accentBlueSoft : colors.bgMuted,
+                      }}
+                    >
+                      <Text style={{ ...type.footnote, fontWeight: "600" }}>{g.name}</Text>
+                    </Pressable>
+                  ))}
+              </View>
+            ) : null}
+            <View style={styles.modalActions}>
+              <PrimaryButton
+                label="Cancel"
+                variant="ghost"
+                onPress={() => setCreateOpen(false)}
+                style={{ flex: 1 }}
+              />
+              <PrimaryButton
+                label="Create"
+                onPress={() => void onCreateCategory()}
                 loading={saving}
                 style={{ flex: 1 }}
               />
@@ -339,6 +462,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgCard,
     borderRadius: radius.xl,
     padding: spacing.lg,
+    zIndex: 2,
+    elevation: 8,
   },
   modalTitle: { ...type.title3, marginBottom: 4 },
   modalHint: { ...type.footnote, marginBottom: spacing.md },

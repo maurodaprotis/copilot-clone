@@ -3,6 +3,7 @@ import { priorYearMonth, shiftYearMonth } from "./cashflow.js";
 
 /** Copilot-like seed taxonomy (en); IDs stable for demo sync. */
 export const SEED_CATEGORY_GROUPS: CategoryGroup[] = [
+  { id: "grp-income", name: "Income", sort_order: 0, is_system: true },
   { id: "grp-living", name: "Living", sort_order: 1, is_system: true },
   { id: "grp-lifestyle", name: "Lifestyle", sort_order: 2, is_system: true },
   { id: "grp-bills", name: "Bills", sort_order: 3, is_system: true },
@@ -10,6 +11,17 @@ export const SEED_CATEGORY_GROUPS: CategoryGroup[] = [
 ];
 
 export const SEED_CATEGORIES: Category[] = [
+  {
+    id: "cat-salary",
+    group_id: "grp-income",
+    name: "Salary",
+    emoji: "💵",
+    color: "#10B981",
+    exclude_from_budget: true,
+    is_income_category: true,
+    archived: false,
+    sort_order: 1,
+  },
   {
     id: "cat-groceries",
     group_id: "grp-living",
@@ -124,6 +136,7 @@ export const SEED_CATEGORIES: Category[] = [
 
 /** Default demo budgets (USD reporting) keyed by category id. */
 export const SEED_BUDGET_AMOUNTS_USD: Record<string, number> = {
+  "cat-salary": 0,
   "cat-groceries": 400,
   "cat-dining": 200,
   "cat-transport": 150,
@@ -216,7 +229,7 @@ export function seedDemoTransactions(opts?: {
   return [
     // Current month — income + spend across categories
     mk("demo-txn-pay-cur", {
-      category_id: null,
+      category_id: "cat-salary",
       amount_reporting: 5200,
       type: "income",
       posted_at: day(ym, 1),
@@ -294,7 +307,7 @@ export function seedDemoTransactions(opts?: {
     }),
     // Prior month
     mk("demo-txn-pay-prior", {
-      category_id: null,
+      category_id: "cat-salary",
       amount_reporting: 5100,
       type: "income",
       posted_at: day(prior, 1),
@@ -344,7 +357,7 @@ export function seedDemoTransactions(opts?: {
     }),
     // Two months ago (for chart density)
     mk("demo-txn-pay-p2", {
-      category_id: null,
+      category_id: "cat-salary",
       amount_reporting: 5000,
       type: "income",
       posted_at: day(prior2, 1),

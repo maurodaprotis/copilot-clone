@@ -45,7 +45,7 @@ async function upsertTxnViaApi(
     currency: input.currency,
     type: input.type,
     is_refund: false,
-    review_status: "needs_review",
+    review_status: "reviewed",
     posted_at: input.posted_at,
     note: input.note ?? null,
     txn_name: input.note ?? null,
@@ -70,10 +70,10 @@ async function upsertTxnViaApi(
 }
 
 /**
- * Insert a needs_review expense/income.
+ * Insert a manually added expense/income as reviewed (Mauro product rule).
+ * needs_review is reserved for bulk/CSV import extract only.
  * - Web / Pages: POST upsert to Worker; on network fail queue web outbox (never expo-sqlite).
  * - Native: local SQLite + outbox enqueue.
- * ReviewStatus is needs_review | reviewed (NOT pending — that is TxnStatus).
  */
 export async function addExpenseOffline(
   input: AddExpenseOfflineInput,
@@ -126,7 +126,7 @@ export async function addExpenseOffline(
         amount_account, amount_reporting, type, is_refund,
         review_status, posted_at, name, note, transfer_pair_id, fingerprint,
         is_split_parent, synced, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'needs_review', ?, ?, ?, NULL, ?, 0, 0, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'reviewed', ?, ?, ?, NULL, ?, 0, 0, ?, ?)`,
       id,
       input.account_id,
       input.category_id ?? null,
@@ -152,7 +152,7 @@ export async function addExpenseOffline(
       currency: input.currency,
       type: txnType,
       is_refund: false,
-      review_status: "needs_review",
+      review_status: "reviewed",
       posted_at,
       note: input.note ?? null,
       txn_name: input.note ?? null,

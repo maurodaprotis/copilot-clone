@@ -3,18 +3,37 @@ import {
   normalizeReviewStatus,
   type Transaction,
 } from "@copilot-clone/domain";
+import { isWebRuntime } from "../db/runtime";
 import type { LocalDb } from "../db/types";
+import { webSyncOrEnqueue } from "./webSyncWrite";
 
 /**
- * Mark a transaction reviewed locally and queue a sync of the review status.
+ * Mark a transaction reviewed.
+ * - Web / Pages: POST review op to Worker (queues web outbox offline). Never expo-sqlite.
+ * - Native: local SQLite + outbox enqueue.
  * When review flips balance applicability, persist the delta on accounts.current_balance.
  */
 export async function reviewTransaction(
   transactionId: string,
   dbOverride?: LocalDb,
 ): Promise<{ outboxId: string }> {
-  const db = dbOverride ?? (await (await import("../db/client")).getDb());
   const now = new Date().toISOString();
+
+  if (!dbOverride && isWebRuntime()) {
+    const result = await webSyncOrEnqueue({
+      payload: {
+        op: "review",
+        id: transactionId,
+        review_status: "reviewed",
+        updated_at: now,
+      },
+      entity_type: "transaction_review",
+      entity_id: transactionId,
+    });
+    return { outboxId: result.outboxId };
+  }
+
+  const db = dbOverride ?? (await (await import("../db/client")).getDb());
   const outboxId = crypto.randomUUID();
 
   const existing = await db.getFirstAsync<{
