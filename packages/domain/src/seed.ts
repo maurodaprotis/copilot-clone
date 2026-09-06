@@ -404,7 +404,7 @@ export function seedDemoTransactions(opts?: {
       category_id: "cat-transport",
       amount_reporting: 34,
       type: "regular",
-      posted_at: day(ym, 15),
+      posted_at: day(ym, 5),
       name: "Client rideshare (reimbursed)",
       review_status: "excluded",
     }),
