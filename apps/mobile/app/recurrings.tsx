@@ -20,6 +20,10 @@ import {
   pullRecurringsFromApi,
   upsertRecurringLocal,
 } from "../src/offline/recurrings";
+import {
+  listAllTransactions,
+  type LocalTransaction,
+} from "../src/offline/queries";
 import { syncOutbox } from "../src/offline/syncOutbox";
 import { createApiTransport } from "../src/sync/apiTransport";
 import { colors, radius, spacing, type } from "../src/theme";
@@ -35,13 +39,20 @@ import {
   useIsDesktopWeb,
 } from "../src/ui";
 
-const KINDS: RecurringKind[] = ["expense", "income", "reimbursement"];
-const CADENCES: RecurringCadence[] = [
-  "weekly",
-  "biweekly",
-  "monthly",
-  "quarterly",
-  "yearly",
+/** Copilot Confirm-frequency radios (live audit). Map extras to nearest API cadence. */
+const FREQ_OPTIONS: {
+  label: string;
+  cadence: RecurringCadence;
+  suggested?: boolean;
+}[] = [
+  { label: "Every week", cadence: "weekly" },
+  { label: "Every 2 weeks", cadence: "biweekly" },
+  { label: "Every month", cadence: "monthly", suggested: true },
+  { label: "Every 2 months", cadence: "monthly" },
+  { label: "Every 3 months", cadence: "quarterly" },
+  { label: "Every 4 months", cadence: "quarterly" },
+  { label: "Every 6 months", cadence: "yearly" },
+  { label: "Every year", cadence: "yearly" },
 ];
 
 function usd(n: number, digits = 0): string {
@@ -88,6 +99,11 @@ export default function RecurringsScreen() {
   const [items, setItems] = useState<Recurring[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState<"pick" | "frequency">("pick");
+  const [txnChoices, setTxnChoices] = useState<LocalTransaction[]>([]);
+  const [txnSearch, setTxnSearch] = useState("");
+  const [pickedTxn, setPickedTxn] = useState<LocalTransaction | null>(null);
+  const [freqLabel, setFreqLabel] = useState("Every month");
   const [editId, setEditId] = useState<string | null>(null);
   const [name, setName] = useState("Fake Rent Payment");
   const [kind, setKind] = useState<RecurringKind>("expense");
@@ -100,6 +116,7 @@ export default function RecurringsScreen() {
   const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [thisMonthOpen, setThisMonthOpen] = useState(true);
 
   const reload = useCallback(async () => {
@@ -153,17 +170,21 @@ export default function RecurringsScreen() {
   const progress =
     leftToPay + paidSoFar > 0 ? paidSoFar / (leftToPay + paidSoFar) : 1;
 
-  function openCreate() {
+  async function openCreate() {
     setEditId(null);
-    setName("Fake Rent Payment");
-    setKind("expense");
+    setWizardStep("pick");
+    setPickedTxn(null);
+    setTxnSearch("");
+    setFreqLabel("Every month");
     setCadence("monthly");
-    setAmount("12000");
-    setCurrency("USD");
-    setNextDate(new Date().toISOString().slice(0, 10));
-    setActive(true);
     setMsg(null);
     setFormOpen(true);
+    try {
+      const txns = await listAllTransactions();
+      setTxnChoices(txns);
+    } catch {
+      setTxnChoices([]);
+    }
   }
 
   function openEdit(r: Recurring) {
@@ -179,24 +200,37 @@ export default function RecurringsScreen() {
     setMsg(null);
   }
 
-  async function onSave() {
+  function pickTxn(t: LocalTransaction) {
+    setPickedTxn(t);
+    const label = (t.note && t.note.trim()) || "Transaction";
+    setName(label);
+    setKind(t.is_refund ? "income" : "expense");
+    setAmount(String(Math.abs(Number(t.amount_reporting) || Number(t.amount) || 0)));
+    setCurrency(t.currency || "USD");
+    setNextDate((t.posted_at || new Date().toISOString()).slice(0, 10));
+    setActive(true);
+    setWizardStep("frequency");
+  }
+
+  async function onCreateFromWizard() {
     setBusy(true);
     setMsg(null);
     try {
       const id = await upsertRecurringLocal({
-        id: editId ?? undefined,
         name: name.trim() || "Recurring",
         kind,
         cadence,
         expected_amount: Number(amount) || 0,
         currency: currency.trim() || "USD",
-        category_id: kind === "income" ? "cat-salary" : "cat-other",
-        account_id: DEMO_ACCOUNT_ID,
+        category_id:
+          pickedTxn?.category_id ??
+          (kind === "income" ? "cat-salary" : "cat-other"),
+        account_id: pickedTxn?.account_id ?? DEMO_ACCOUNT_ID,
         next_expected_date: nextDate.slice(0, 10),
-        active,
+        active: true,
       });
       await syncOutbox(createApiTransport()).catch(() => ({ pushed: 0 }));
-      setMsg(editId ? "Recurring updated" : "Recurring created");
+      setMsg("Recurring created");
       setFormOpen(false);
       setSelectedId(id);
       setEditId(null);
@@ -207,6 +241,45 @@ export default function RecurringsScreen() {
       setBusy(false);
     }
   }
+
+  async function onDeleteRecurring() {
+    if (!selected) return;
+    setBusy(true);
+    setMsg(null);
+    setMoreOpen(false);
+    try {
+      await upsertRecurringLocal({
+        id: selected.id,
+        name: selected.name,
+        kind: selected.kind,
+        cadence: selected.cadence,
+        expected_amount: Number(selected.expected_amount) || 0,
+        currency: selected.currency,
+        category_id: selected.category_id,
+        account_id: selected.account_id,
+        next_expected_date: selected.next_expected_date.slice(0, 10),
+        active: false,
+      });
+      await syncOutbox(createApiTransport()).catch(() => ({ pushed: 0 }));
+      setSelectedId(null);
+      setMsg("Recurring deleted");
+      await reload();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const filteredTxns = useMemo(() => {
+    const q = txnSearch.trim().toLowerCase();
+    const list = txnChoices.filter((t) => {
+      const label = (t.note ?? "").toLowerCase();
+      if (!q) return true;
+      return label.includes(q) || t.id.toLowerCase().includes(q);
+    });
+    return list.slice(0, 40);
+  }, [txnChoices, txnSearch]);
 
   const ringSize = 72;
   const stroke = 6;
@@ -290,7 +363,7 @@ export default function RecurringsScreen() {
           <IconButton
             glyph="＋"
             accessibilityLabel="Add a recurring"
-            onPress={openCreate}
+            onPress={() => void openCreate()}
           />
         }
       />
@@ -313,7 +386,7 @@ export default function RecurringsScreen() {
               title="No recurrings yet"
               body="Add a monthly bill or paycheck template."
               ctaLabel="Add a recurring"
-              onCta={openCreate}
+              onCta={() => void openCreate()}
             />
           </Card>
         ) : (
@@ -340,7 +413,17 @@ export default function RecurringsScreen() {
 
   const detailBody = selected ? (
     <View style={styles.detailPad}>
-      <Text style={styles.detailTitle}>{selected.name}</Text>
+      <View style={styles.detailTop}>
+        <Text style={[styles.detailTitle, { flex: 1 }]}>{selected.name}</Text>
+        <Pressable
+          onPress={() => setMoreOpen(true)}
+          hitSlop={10}
+          style={styles.moreBtn}
+          accessibilityLabel="More options"
+        >
+          <Text style={styles.moreGlyph}>···</Text>
+        </Pressable>
+      </View>
       <Text style={styles.detailMeta}>
         {cadenceLabel(selected.cadence)} · {selected.kind}
         {selected.active ? "" : " · inactive"}
@@ -351,15 +434,6 @@ export default function RecurringsScreen() {
       <Text style={styles.detailHint}>
         Next payment around {formatDay(selected.next_expected_date)}
       </Text>
-      <PrimaryButton
-        label="Edit recurring"
-        variant="secondary"
-        onPress={() => {
-          openEdit(selected);
-          setFormOpen(true);
-        }}
-        style={{ marginTop: spacing.lg, alignSelf: "flex-start" }}
-      />
     </View>
   ) : (
     <View style={styles.detailEmpty}>
@@ -372,102 +446,133 @@ export default function RecurringsScreen() {
     <Modal visible={formOpen} transparent animationType="fade">
       <View style={styles.modalBackdrop}>
         <ScrollView contentContainerStyle={styles.modalCard}>
-          <Text style={styles.modalTitle}>
-            {editId ? "Edit recurring" : "Add a recurring"}
-          </Text>
-          <Text style={styles.fieldLabel}>Name</Text>
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="Fake Rent Payment"
-            placeholderTextColor={colors.textTertiary}
-          />
-          <Text style={styles.fieldLabel}>Kind</Text>
-          <View style={styles.chips}>
-            {KINDS.map((k) => (
-              <Pressable
-                key={k}
-                style={[styles.chip, kind === k && styles.chipOn]}
-                onPress={() => setKind(k)}
-              >
-                <Text style={[styles.chipText, kind === k && styles.chipTextOn]}>
-                  {k}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <Text style={styles.fieldLabel}>Cadence</Text>
-          <View style={styles.chips}>
-            {CADENCES.map((c) => (
-              <Pressable
-                key={c}
-                style={[styles.chip, cadence === c && styles.chipOn]}
-                onPress={() => setCadence(c)}
-              >
-                <Text
-                  style={[styles.chipText, cadence === c && styles.chipTextOn]}
-                >
-                  {c}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <View style={styles.row2}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.fieldLabel}>Amount</Text>
+          {wizardStep === "pick" ? (
+            <>
+              <Text style={styles.modalTitle}>New recurring</Text>
+              <Text style={styles.fieldLabel}>Search</Text>
               <TextInput
                 style={styles.input}
-                value={amount}
-                onChangeText={setAmount}
-                keyboardType="decimal-pad"
+                value={txnSearch}
+                onChangeText={setTxnSearch}
+                placeholder="Search transactions"
                 placeholderTextColor={colors.textTertiary}
               />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.fieldLabel}>Currency</Text>
-              <TextInput
-                style={styles.input}
-                value={currency}
-                onChangeText={setCurrency}
-                autoCapitalize="characters"
-                placeholderTextColor={colors.textTertiary}
-              />
-            </View>
-          </View>
-          <Text style={styles.fieldLabel}>Next expected date</Text>
-          <TextInput
-            style={styles.input}
-            value={nextDate}
-            onChangeText={setNextDate}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={colors.textTertiary}
-          />
-          <Pressable
-            style={[styles.chip, active && styles.chipOn, { alignSelf: "flex-start" }]}
-            onPress={() => setActive((v) => !v)}
-          >
-            <Text style={[styles.chipText, active && styles.chipTextOn]}>
-              {active ? "Active" : "Inactive"}
-            </Text>
-          </Pressable>
-          {msg && formOpen ? <Text style={styles.msg}>{msg}</Text> : null}
-          <View style={styles.modalActions}>
-            <PrimaryButton
-              label="Cancel"
-              variant="ghost"
-              onPress={() => setFormOpen(false)}
-            />
-            <PrimaryButton
-              label={editId ? "Save" : "Create"}
-              onPress={() => void onSave()}
-              loading={busy}
-            />
-          </View>
+              {filteredTxns.length === 0 ? (
+                <Text style={styles.msg}>
+                  No transactions to pick. Add a txn first, then create a
+                  recurring.
+                </Text>
+              ) : (
+                filteredTxns.map((t) => {
+                  const label = (t.note && t.note.trim()) || "Transaction";
+                  const amt = Math.abs(
+                    Number(t.amount_reporting) || Number(t.amount) || 0,
+                  );
+                  return (
+                    <Pressable
+                      key={t.id}
+                      style={styles.pickRow}
+                      onPress={() => pickTxn(t)}
+                    >
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.pickName} numberOfLines={1}>
+                          {label}
+                        </Text>
+                        <Text style={styles.pickMeta}>
+                          {formatDay(t.posted_at || nextDate)}
+                        </Text>
+                      </View>
+                      <Text style={styles.pickAmt}>{usd(amt, 2)}</Text>
+                    </Pressable>
+                  );
+                })
+              )}
+              <View style={styles.modalActions}>
+                <PrimaryButton
+                  label="Cancel"
+                  variant="ghost"
+                  onPress={() => setFormOpen(false)}
+                />
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.modalTitle}>Confirm the frequency</Text>
+              <Text style={styles.pickMeta}>
+                {name} · {usd(Number(amount) || 0, 2)}
+              </Text>
+              <View style={{ marginTop: spacing.md, gap: 4 }}>
+                {FREQ_OPTIONS.map((opt) => {
+                  const on = freqLabel === opt.label;
+                  return (
+                    <Pressable
+                      key={opt.label}
+                      style={[styles.freqRow, on && styles.freqRowOn]}
+                      onPress={() => {
+                        setFreqLabel(opt.label);
+                        setCadence(opt.cadence);
+                      }}
+                    >
+                      <View
+                        style={[styles.radio, on && styles.radioOn]}
+                      />
+                      <Text style={styles.freqLabel}>
+                        {opt.label}
+                        {opt.suggested ? (
+                          <Text style={styles.suggested}> · Suggested</Text>
+                        ) : null}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={[styles.pickMeta, { marginTop: spacing.sm }]}>
+                Unsupported cadences map to nearest API cadence (weekly /
+                biweekly / monthly / quarterly / yearly).
+              </Text>
+              {msg && formOpen ? <Text style={styles.msg}>{msg}</Text> : null}
+              <View style={styles.modalActions}>
+                <PrimaryButton
+                  label="Back"
+                  variant="ghost"
+                  onPress={() => setWizardStep("pick")}
+                />
+                <PrimaryButton
+                  label="Next"
+                  onPress={() => void onCreateFromWizard()}
+                  loading={busy}
+                />
+              </View>
+            </>
+          )}
         </ScrollView>
       </View>
     </Modal>
   );
+
+  const moreModal = selected ? (
+    <Modal visible={moreOpen} transparent animationType="fade">
+      <View style={styles.modalBackdrop}>
+        <View style={styles.moreSheet}>
+          <Text style={styles.modalTitle}>More options</Text>
+          <Pressable
+            style={styles.pickRow}
+            onPress={() => void onDeleteRecurring()}
+          >
+            <Text style={[styles.pickName, { color: colors.danger }]}>
+              Delete recurring
+            </Text>
+          </Pressable>
+          <PrimaryButton
+            label="Cancel"
+            variant="ghost"
+            onPress={() => setMoreOpen(false)}
+            style={{ marginTop: spacing.md }}
+          />
+        </View>
+      </View>
+    </Modal>
+  ) : null;
 
   return (
     <>
@@ -495,6 +600,7 @@ export default function RecurringsScreen() {
         </Screen>
       )}
       {formModal}
+      {moreModal}
     </>
   );
 }
@@ -607,4 +713,57 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: spacing.md,
   },
+  detailTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md,
+  },
+  moreBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.bgMuted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moreGlyph: { fontSize: 18, color: colors.textSecondary, fontWeight: "700" },
+  moreSheet: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radius.modal,
+    padding: spacing.xl,
+  },
+  pickRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.borderHairline,
+  },
+  pickName: { ...type.headline },
+  pickMeta: { ...type.footnote, color: colors.textTertiary, marginTop: 2 },
+  pickAmt: { ...type.amountList },
+  freqRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: radius.md,
+  },
+  freqRowOn: { backgroundColor: colors.accentBlueSoft },
+  radio: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: colors.borderSubtle,
+  },
+  radioOn: {
+    borderColor: colors.accentBlue,
+    backgroundColor: colors.accentBlue,
+  },
+  freqLabel: { ...type.headline },
+  suggested: { ...type.footnote, color: colors.accentBlue, fontWeight: "600" },
 });

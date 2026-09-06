@@ -41,6 +41,67 @@ import {
 
 const RANGES = ["1W", "1M", "3M", "YTD", "1Y", "ALL"] as const;
 
+/** Copilot Add-an-account menu (live audit labels). */
+const ADD_MENU: {
+  id: "banks" | "investments" | "crypto" | "loans" | "assets";
+  title: string;
+  subtitle: string;
+  type: AccountType;
+  cash?: boolean;
+}[] = [
+  {
+    id: "banks",
+    title: "Banks",
+    subtitle: "Credit cards, checking, savings",
+    type: "depository",
+  },
+  {
+    id: "investments",
+    title: "Investments",
+    subtitle: "Brokerages, retirement accounts",
+    type: "investment",
+  },
+  {
+    id: "crypto",
+    title: "Crypto",
+    subtitle: "Exchanges, wallets, holdings",
+    type: "other",
+  },
+  {
+    id: "loans",
+    title: "Loans",
+    subtitle: "Mortgages, student loans",
+    type: "loan",
+  },
+  {
+    id: "assets",
+    title: "Assets",
+    subtitle: "Cash",
+    type: "other",
+    cash: true,
+  },
+];
+
+/** 16 Copilot color chips (cash form). UI-only — Account API has no color field. */
+const ACCOUNT_COLORS: { label: string; hex: string }[] = [
+  { label: "Red Warm", hex: "#F87171" },
+  { label: "Orange Warm", hex: "#FB923C" },
+  { label: "Orange", hex: "#F59E0B" },
+  { label: "Brown", hex: "#A16207" },
+  { label: "Beige", hex: "#D6D3D1" },
+  { label: "Yellow", hex: "#FBBF24" },
+  { label: "Olive", hex: "#84CC16" },
+  { label: "Green", hex: "#22C55E" },
+  { label: "Teal", hex: "#14B8A6" },
+  { label: "Blue", hex: "#3B82F6" },
+  { label: "Indigo", hex: "#6366F1" },
+  { label: "Purple", hex: "#A78BFA" },
+  { label: "Magenta", hex: "#E879F9" },
+  { label: "Pink", hex: "#F472B6" },
+  { label: "Red", hex: "#EF4444" },
+  { label: "Gray", hex: "#94A3B8" },
+];
+
 const SECTION_ORDER: AccountType[] = [
   "credit_card",
   "depository",
@@ -104,6 +165,9 @@ const emptyForm = {
   type: "depository" as Account["type"],
   current_balance: "0",
   include_in_net_worth: true,
+  /** Cash manual path: Institution name locked to Cash. */
+  cashMode: false,
+  color: ACCOUNT_COLORS[9].hex,
 };
 
 export default function AccountsScreen() {
@@ -117,6 +181,10 @@ export default function AccountsScreen() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [chartSettingsOpen, setChartSettingsOpen] = useState(false);
+  const [combineAssetsDebt, setCombineAssetsDebt] = useState(false);
+  const [singleLine, setSingleLine] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const reload = useCallback(async () => {
@@ -175,9 +243,20 @@ export default function AccountsScreen() {
     [rows, selectedId],
   );
 
-  function openCreate() {
-    setForm(emptyForm);
+  function openAddMenu() {
     setMsg(null);
+    setAddMenuOpen(true);
+  }
+
+  function openCreateFromMenu(item: (typeof ADD_MENU)[number]) {
+    setAddMenuOpen(false);
+    setForm({
+      ...emptyForm,
+      type: item.type,
+      name: item.cash ? "Cash" : "",
+      cashMode: Boolean(item.cash),
+      color: ACCOUNT_COLORS[9].hex,
+    });
     setFormOpen(true);
   }
 
@@ -190,6 +269,8 @@ export default function AccountsScreen() {
       type: row.account.type,
       current_balance: String(row.balance_account ?? row.account.current_balance ?? 0),
       include_in_net_worth: row.account.include_in_net_worth,
+      cashMode: false,
+      color: ACCOUNT_COLORS[9].hex,
     });
   }
 
@@ -298,6 +379,14 @@ export default function AccountsScreen() {
             </View>
           ) : null}
         </View>
+        <Pressable
+          onPress={() => setChartSettingsOpen(true)}
+          hitSlop={10}
+          style={styles.gearBtn}
+          accessibilityLabel="Account settings"
+        >
+          <Text style={styles.gearGlyph}>⚙</Text>
+        </Pressable>
       </View>
       <NetWorthTrendChart
         assets={assets}
@@ -323,7 +412,7 @@ export default function AccountsScreen() {
           <IconButton
             glyph="＋"
             accessibilityLabel="Add an account"
-            onPress={openCreate}
+            onPress={openAddMenu}
           />
         }
       />
@@ -380,7 +469,7 @@ export default function AccountsScreen() {
             title="No accounts yet"
             body="Add a manual account to track assets and debts."
             ctaLabel="Add an account"
-            onCta={openCreate}
+            onCta={openAddMenu}
           />
         </Card>
       ) : null}
@@ -428,49 +517,155 @@ export default function AccountsScreen() {
     </View>
   );
 
+  const addMenuModal = (
+    <Modal visible={addMenuOpen} transparent animationType="fade">
+      <View style={styles.modalBackdrop}>
+        <View style={styles.moreSheet}>
+          <Text style={styles.modalTitle}>Add an account</Text>
+          {ADD_MENU.map((item) => (
+            <Pressable
+              key={item.id}
+              style={styles.moreRow}
+              onPress={() => openCreateFromMenu(item)}
+            >
+              <Text style={styles.moreRowText}>{item.title}</Text>
+              <Text style={styles.menuSub}>{item.subtitle}</Text>
+            </Pressable>
+          ))}
+          <Text style={styles.stubHint}>
+            No Plaid — manual accounts only. Assets opens the Cash form.
+          </Text>
+          <PrimaryButton
+            label="Cancel"
+            variant="ghost"
+            onPress={() => setAddMenuOpen(false)}
+            style={{ marginTop: spacing.md }}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const chartSettingsModal = (
+    <Modal visible={chartSettingsOpen} transparent animationType="fade">
+      <View style={styles.modalBackdrop}>
+        <View style={styles.moreSheet}>
+          <Text style={styles.modalTitle}>Account settings</Text>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.moreRowText}>Combine assets and debt</Text>
+              <Text style={styles.stubHint}>Stub — UI only (no chart API)</Text>
+            </View>
+            <Switch
+              value={combineAssetsDebt}
+              onValueChange={setCombineAssetsDebt}
+            />
+          </View>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.moreRowText}>Use a single line</Text>
+              <Text style={styles.stubHint}>Stub — UI only</Text>
+            </View>
+            <Switch value={singleLine} onValueChange={setSingleLine} />
+          </View>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.moreRowText}>Included in chart</Text>
+              <Text style={styles.menuSub}>
+                {rows.filter((r) => !r.account.is_archived && r.account.include_in_net_worth).length}{" "}
+                accounts
+              </Text>
+            </View>
+          </View>
+          <PrimaryButton
+            label="Done"
+            variant="ghost"
+            onPress={() => setChartSettingsOpen(false)}
+            style={{ marginTop: spacing.md }}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+
   const formModal = (
     <Modal visible={formOpen} transparent animationType="fade">
       <View style={styles.modalBackdrop}>
         <ScrollView contentContainerStyle={styles.modalCard}>
           <Text style={styles.modalTitle}>
-            {form.id ? "Edit account" : "Add an account"}
+            {form.id
+              ? "Edit account"
+              : form.cashMode
+                ? "MANUAL CASH ACCOUNT"
+                : "Add an account"}
           </Text>
-          <Text style={styles.fieldLabel}>Name</Text>
-          <TextInput
-            style={styles.input}
-            value={form.name}
-            onChangeText={(name) => setForm((f) => ({ ...f, name }))}
-            placeholder="e.g. Demo Visa 4242"
-            placeholderTextColor={colors.textTertiary}
-          />
-          <Text style={styles.fieldLabel}>Type</Text>
-          <View style={styles.typeRow}>
-            {ACCOUNT_TYPES.map((t) => (
-              <Pressable
-                key={t}
-                style={[styles.typeChip, form.type === t && styles.typeChipOn]}
-                onPress={() => setForm((f) => ({ ...f, type: t }))}
-              >
-                <Text
-                  style={[
-                    styles.typeChipText,
-                    form.type === t && styles.typeChipTextOn,
-                  ]}
-                >
-                  {typeChipLabel(t)}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <Text style={styles.fieldLabel}>Currency</Text>
-          <TextInput
-            style={styles.input}
-            value={form.currency}
-            autoCapitalize="characters"
-            onChangeText={(currency) => setForm((f) => ({ ...f, currency }))}
-            placeholder="USD"
-            placeholderTextColor={colors.textTertiary}
-          />
+          {form.cashMode && !form.id ? (
+            <>
+              <Text style={styles.fieldLabel}>Institution name</Text>
+              <TextInput
+                style={[styles.input, styles.inputDisabled]}
+                value="Cash"
+                editable={false}
+                placeholderTextColor={colors.textTertiary}
+              />
+              <Text style={styles.fieldLabel}>Account name</Text>
+              <TextInput
+                style={styles.input}
+                value={form.name}
+                onChangeText={(name) => setForm((f) => ({ ...f, name }))}
+                placeholder="Cash"
+                placeholderTextColor={colors.textTertiary}
+              />
+            </>
+          ) : (
+            <>
+              <Text style={styles.fieldLabel}>Name</Text>
+              <TextInput
+                style={styles.input}
+                value={form.name}
+                onChangeText={(name) => setForm((f) => ({ ...f, name }))}
+                placeholder="e.g. Demo Visa 4242"
+                placeholderTextColor={colors.textTertiary}
+              />
+              {!form.id ? (
+                <>
+                  <Text style={styles.fieldLabel}>Type</Text>
+                  <View style={styles.typeRow}>
+                    {ACCOUNT_TYPES.map((t) => (
+                      <Pressable
+                        key={t}
+                        style={[
+                          styles.typeChip,
+                          form.type === t && styles.typeChipOn,
+                        ]}
+                        onPress={() => setForm((f) => ({ ...f, type: t }))}
+                      >
+                        <Text
+                          style={[
+                            styles.typeChipText,
+                            form.type === t && styles.typeChipTextOn,
+                          ]}
+                        >
+                          {typeChipLabel(t)}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </>
+              ) : null}
+              <Text style={styles.fieldLabel}>Currency</Text>
+              <TextInput
+                style={styles.input}
+                value={form.currency}
+                autoCapitalize="characters"
+                onChangeText={(currency) =>
+                  setForm((f) => ({ ...f, currency }))
+                }
+                placeholder="USD"
+                placeholderTextColor={colors.textTertiary}
+              />
+            </>
+          )}
           <Text style={styles.fieldLabel}>Balance</Text>
           <TextInput
             style={styles.input}
@@ -481,15 +676,39 @@ export default function AccountsScreen() {
             }
             placeholderTextColor={colors.textTertiary}
           />
-          <View style={styles.switchRow}>
-            <Text style={styles.fieldLabel}>Include in net worth</Text>
-            <Switch
-              value={form.include_in_net_worth}
-              onValueChange={(include_in_net_worth) =>
-                setForm((f) => ({ ...f, include_in_net_worth }))
-              }
-            />
-          </View>
+          {(form.cashMode && !form.id) || form.id ? (
+            <>
+              <Text style={styles.fieldLabel}>Color</Text>
+              <View style={styles.colorRow}>
+                {ACCOUNT_COLORS.map((c) => (
+                  <Pressable
+                    key={c.label}
+                    accessibilityLabel={c.label}
+                    onPress={() => setForm((f) => ({ ...f, color: c.hex }))}
+                    style={[
+                      styles.colorChip,
+                      { backgroundColor: c.hex },
+                      form.color === c.hex && styles.colorChipOn,
+                    ]}
+                  />
+                ))}
+              </View>
+              <Text style={styles.stubHint}>
+                Color chips — UI only (Account API has no color field)
+              </Text>
+            </>
+          ) : null}
+          {!form.cashMode ? (
+            <View style={styles.switchRow}>
+              <Text style={styles.fieldLabel}>Include in net worth</Text>
+              <Switch
+                value={form.include_in_net_worth}
+                onValueChange={(include_in_net_worth) =>
+                  setForm((f) => ({ ...f, include_in_net_worth }))
+                }
+              />
+            </View>
+          ) : null}
           {msg && formOpen ? <Text style={styles.msg}>{msg}</Text> : null}
           <View style={styles.modalActions}>
             <PrimaryButton
@@ -498,7 +717,7 @@ export default function AccountsScreen() {
               onPress={() => setFormOpen(false)}
             />
             <PrimaryButton
-              label="Save"
+              label={form.id ? "Save" : "Create"}
               onPress={() => void onSave()}
               loading={saving}
             />
@@ -569,6 +788,8 @@ export default function AccountsScreen() {
           ) : null}
         </Screen>
       )}
+      {addMenuModal}
+      {chartSettingsModal}
       {formModal}
       {moreModal}
     </>
@@ -578,7 +799,7 @@ export default function AccountsScreen() {
 const styles = StyleSheet.create({
   listPad: { padding: spacing.lg, paddingBottom: spacing.xxxl },
   summaryCard: { marginBottom: spacing.lg },
-  nwRow: { flexDirection: "row", gap: spacing.xl, marginBottom: spacing.sm },
+  nwRow: { flexDirection: "row", gap: spacing.xl, marginBottom: spacing.sm, position: "relative", paddingRight: 36 },
   nwCol: { flex: 1 },
   dotRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
   dot: { width: 8, height: 8, borderRadius: 4 },
@@ -710,4 +931,40 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.borderHairline,
   },
   moreRowText: { ...type.headline },
+  menuSub: { ...type.footnote, color: colors.textTertiary, marginTop: 2 },
+  stubHint: {
+    ...type.footnote,
+    color: colors.textTertiary,
+    marginTop: spacing.sm,
+    fontStyle: "italic",
+  },
+  gearBtn: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.bgMuted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  gearGlyph: { fontSize: 16, color: colors.textSecondary },
+  inputDisabled: { opacity: 0.65, backgroundColor: colors.bgMuted },
+  colorRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 8,
+  },
+  colorChip: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  colorChipOn: {
+    borderColor: colors.textPrimary,
+  },
 });

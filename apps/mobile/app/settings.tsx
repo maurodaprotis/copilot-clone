@@ -64,7 +64,7 @@ export default function SettingsScreen() {
   const [rates, setRates] = useState<FxRate[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const [themeMode, setThemeMode] = useState("Light");
+  const [themeMode, setThemeMode] = useState("Auto");
   const [budgetingOn, setBudgetingOn] = useState(true);
   const [rolloverOn, setRolloverOn] = useState(false);
   const [base, setBase] = useState("USD");
@@ -213,7 +213,7 @@ export default function SettingsScreen() {
           <View style={styles.rowText}>
             <Text style={styles.rowLabel}>Enable rollover</Text>
             <Text style={styles.rowDesc}>
-              Carry leftover budget into the next month
+              Allow budgets to be spent across months
             </Text>
           </View>
           <Toggle value={rolloverOn} onChange={setRolloverOn} />
@@ -432,6 +432,29 @@ export default function SettingsScreen() {
           onPress={() => flash("Privacy choices — stub")}
         />
       </SettingsGroup>
+
+      <SettingsGroup label="Session">
+        <ActionRow
+          title="Log out"
+          button="Log out"
+          stub
+          onPress={() => flash("Log out — stub (no auth session)")}
+        />
+        <SettingsDivider />
+        <ActionRow
+          title="Log out of all devices"
+          button="Log out all"
+          stub
+          onPress={() => flash("Log out of all devices — stub")}
+        />
+        <SettingsDivider />
+        <ActionRow
+          title="Delete account"
+          button="Delete"
+          stub
+          onPress={() => flash("Delete account — stub")}
+        />
+      </SettingsGroup>
       {toast ? <Text style={styles.msg}>{toast}</Text> : null}
     </>
   );
@@ -440,15 +463,30 @@ export default function SettingsScreen() {
     <SettingsGroup label="Subscription">
       <View style={styles.paywall}>
         <Text style={styles.paywallEmoji}>✨</Text>
-        <Text style={styles.paywallTitle}>Copilot Money</Text>
-        <Text style={styles.paywallBody}>
-          Unlock Intelligence, unlimited institutions, and priority support.
-        </Text>
+        <Text style={styles.paywallTitle}>Subscribe to Copilot Money today</Text>
+        <Text style={styles.paywallBody}>21,000 5-star reviews</Text>
+        <View style={styles.reviewStack}>
+          {(
+            [
+              "Simply the best",
+              "Makes budgeting fun",
+              "A joy to use",
+              "Changed the way I view my money",
+              "What a great app",
+              "Best app I've purchased in years",
+            ] as const
+          ).map((quote) => (
+            <View key={quote} style={styles.reviewCard}>
+              <Text style={styles.reviewStars}>★★★★★</Text>
+              <Text style={styles.reviewQuote}>{quote}</Text>
+            </View>
+          ))}
+        </View>
         <Text style={styles.stubTag}>Stub — paywall UI only (no billing)</Text>
         <PrimaryButton
-          label="Start free trial"
+          label="Get started"
           variant="accent"
-          onPress={() => flash("Subscription paywall — stub")}
+          onPress={() => flash("Get started — stub (no billing)")}
           style={{ marginTop: spacing.md, alignSelf: "stretch" }}
         />
       </View>
@@ -456,48 +494,87 @@ export default function SettingsScreen() {
   );
 
   const banksBody = (
-    <SettingsGroup label="Banks & institutions">
-      <View style={styles.stub}>
-        <Text style={styles.rowLabel}>No institutions connected</Text>
-        <Text style={styles.rowDesc}>
-          Manual accounts only — no Plaid in this clone. Add accounts from the
-          Accounts tab.
-        </Text>
+    <>
+      <View style={styles.banksToolbar}>
         <PrimaryButton
-          label="Open Accounts"
+          label="+ New"
           variant="secondary"
           onPress={() => router.push("/accounts" as never)}
-          style={{ marginTop: spacing.md, alignSelf: "flex-start" }}
         />
       </View>
-    </SettingsGroup>
+      <SettingsGroup label="Banks & institutions">
+        <View style={styles.stub}>
+          <Text style={styles.rowLabel}>No institutions connected.</Text>
+          <Text style={styles.rowDesc}>
+            Manual accounts only — no Plaid in this clone.
+          </Text>
+          <Text style={styles.stubTag}>Stub — institution link UI only</Text>
+          <PrimaryButton
+            label="Add an account"
+            variant="secondary"
+            onPress={() => router.push("/accounts" as never)}
+            style={{ marginTop: spacing.md, alignSelf: "flex-start" }}
+          />
+        </View>
+      </SettingsGroup>
+    </>
   );
 
   const aboutBody = (
     <>
       <SettingsGroup label="About">
-        <ListRow title="Version" subtitle={APP_VERSION} />
-        <SettingsDivider />
-        <ListRow
-          title="Help"
-          subtitle="Docs & support (stub)"
-          chevron
-          onPress={() => flash("Help — stub")}
+        <ActionRow
+          title="Version"
+          subtitle={APP_VERSION}
+          button="Copy"
+          onPress={() => {
+            try {
+              if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+                void navigator.clipboard.writeText(APP_VERSION);
+              }
+            } catch {
+              // ignore
+            }
+            flash("Version copied");
+          }}
         />
         <SettingsDivider />
-        <ListRow
-          title="Legal"
-          subtitle="Terms & privacy (stub)"
-          chevron
-          onPress={() => flash("Legal — stub")}
+        <ActionRow
+          title="Browse help articles"
+          subtitle="Help center"
+          button="Open help center"
+          stub
+          onPress={() => flash("Help center — stub")}
+        />
+        <SettingsDivider />
+        <ActionRow
+          title="Contact us"
+          button="Contact support"
+          stub
+          onPress={() => flash("Contact support — stub")}
         />
       </SettingsGroup>
-      <SettingsGroup>
-        <View style={styles.stub}>
-          <Text style={styles.rowDesc}>
-            Copilot Money clone · USD-first · multi-currency ARS.
-          </Text>
-        </View>
+      <SettingsGroup label="Legal">
+        <ActionRow
+          title="Terms of service"
+          button="View"
+          stub
+          onPress={() => flash("Terms of service — stub")}
+        />
+        <SettingsDivider />
+        <ActionRow
+          title="Privacy policy"
+          button="View"
+          stub
+          onPress={() => flash("Privacy policy — stub")}
+        />
+        <SettingsDivider />
+        <ActionRow
+          title="California Privacy Notice"
+          button="View"
+          stub
+          onPress={() => flash("California Privacy Notice — stub")}
+        />
       </SettingsGroup>
     </>
   );
@@ -555,6 +632,20 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
+  reviewStack: { gap: 8, marginTop: spacing.md, alignSelf: "stretch" },
+  reviewCard: {
+    backgroundColor: colors.bgMuted,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  reviewStars: { color: colors.accentBlue, fontSize: 12, marginBottom: 4 },
+  reviewQuote: { ...type.callout, fontWeight: "600" },
+  banksToolbar: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginBottom: spacing.sm,
+  },
+
   close: {
     fontSize: 16,
     color: colors.textSecondary,
