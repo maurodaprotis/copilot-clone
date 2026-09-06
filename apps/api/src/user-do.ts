@@ -1524,6 +1524,9 @@ export class UserDO extends DurableObject<Env> {
 
   async fetch(request: Request): Promise<Response> {
     await this.ensureSchema();
+    // Idempotent upserts (excluded demo txns / Demo Brokerage) must run even
+    // when the DO was already warm before Phase 4C landed.
+    this.ensurePhase4Extras();
     const url = new URL(request.url);
 
     if (request.method === "GET" && url.pathname === "/health") {
