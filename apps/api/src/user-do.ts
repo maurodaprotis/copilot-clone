@@ -17,6 +17,8 @@ import {
   parseCashFlowRangeKey,
   cumulativeSpendByDay,
   seedDemoTransactions,
+  buildDemoInvestmentsPayload,
+  INVESTMENT_RANGE_KEYS,
   currentYearMonth,
   defaultUserSettings,
   deriveAmounts,
@@ -156,6 +158,7 @@ export class UserDO extends DurableObject<Env> {
     this.seedIfEmpty();
     this.ensureIncomeCategories();
     this.seedDemoTxnsIfEmpty();
+    this.ensurePhase4Extras();
     this.seedFxIfNeeded();
     this.seedSettingsIfNeeded();
     this.migrateAccountTypesAndBalances();
@@ -232,6 +235,54 @@ export class UserDO extends DurableObject<Env> {
          id, group_id, name, emoji, color,
          exclude_from_budget, is_income_category, archived, sort_order
        ) VALUES ('cat-salary', 'grp-income', 'Salary', '💵', '#10B981', 1, 1, 0, 1)`,
+    );
+  }
+
+
+  /** Upsert Cash Flow excluded demo rows + Demo Brokerage for Phase 4C (idempotent). */
+  private ensurePhase4Extras(): void {
+    const now = new Date().toISOString();
+    const ym = currentYearMonth();
+    const extras = seedDemoTransactions({ yearMonth: ym }).filter((t) =>
+      t.id.startsWith("demo-txn-excl-"),
+    );
+    for (const t of extras) {
+      this.ctx.storage.sql.exec(
+        `INSERT OR IGNORE INTO transactions (
+          id, account_id, category_id, amount, currency,
+          amount_account, amount_reporting, type, is_refund,
+          review_status, posted_at, name, note, transfer_pair_id, fingerprint,
+          is_split_parent, synced, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, 1, ?, ?)`,
+        t.id,
+        t.account_id,
+        t.category_id,
+        t.amount,
+        t.currency,
+        t.amount_account,
+        t.amount_reporting,
+        t.type,
+        t.is_refund,
+        t.review_status,
+        t.posted_at,
+        t.name,
+        t.note,
+        t.fingerprint,
+        now,
+        now,
+      );
+    }
+
+    // Demo Brokerage (manual) — Accounts + Investments parity
+    this.ctx.storage.sql.exec(
+      `INSERT OR IGNORE INTO accounts (
+         id, name, currency, type, is_archived, include_in_net_worth, current_balance
+       ) VALUES (?, ?, ?, ?, 0, 1, ?)`,
+      "acc-demo-brokerage",
+      "Demo Brokerage",
+      "USD",
+      "investment",
+      5397,
     );
   }
 
@@ -1729,6 +1780,15 @@ export class UserDO extends DurableObject<Env> {
       });
     }
 
+
+
+    if (request.method === "GET" && url.pathname === "/investments") {
+      const raw = (url.searchParams.get("range") ?? "1W").toUpperCase();
+      const range = (INVESTMENT_RANGE_KEYS as readonly string[]).includes(raw)
+        ? (raw as (typeof INVESTMENT_RANGE_KEYS)[number])
+        : "1W";
+      return Response.json(buildDemoInvestmentsPayload(range));
+    }
 
     return new Response("Not found", { status: 404 });
   }

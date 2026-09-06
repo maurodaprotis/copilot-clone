@@ -391,5 +391,22 @@ export function seedDemoTransactions(opts?: {
       posted_at: day(prior2, 10),
       name: "Utilities",
     }),
+    // Excluded spend — Cash Flow View More → Excluded Transactions
+    mk("demo-txn-excl-work", {
+      category_id: "cat-shopping",
+      amount_reporting: 86,
+      type: "regular",
+      posted_at: day(ym, 4),
+      name: "Work laptop bag",
+      review_status: "excluded",
+    }),
+    mk("demo-txn-excl-reimb", {
+      category_id: "cat-transport",
+      amount_reporting: 34,
+      type: "regular",
+      posted_at: day(ym, 15),
+      name: "Client rideshare (reimbursed)",
+      review_status: "excluded",
+    }),
   ];
 }

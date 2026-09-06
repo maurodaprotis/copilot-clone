@@ -6,6 +6,7 @@ import {
   CASH_FLOW_RANGE_LABELS,
   CASH_FLOW_RANGE_SHORT,
   type CashFlowCategoryBreakdown,
+  type CashFlowExcludedTxnRow,
   type CashFlowRangeKey,
   type CashFlowRangePayload,
   type CashFlowRangeSeriesPoint,
@@ -75,12 +76,16 @@ function AreaChart({
   showComparison,
   priorSeries,
   mode,
+  onBarPress,
+  viewMore,
 }: {
   title: string;
   series: CashFlowRangeSeriesPoint[];
   showComparison: boolean;
   priorSeries?: CashFlowRangeSeriesPoint[];
   mode: "income" | "spend" | "net";
+  onBarPress?: () => void;
+  viewMore?: () => void;
 }) {
   const values = series.map((s) =>
     mode === "income" ? s.income : mode === "spend" ? s.spend : s.net,
@@ -104,7 +109,14 @@ function AreaChart({
 
   return (
     <Card style={styles.chartCard}>
-      <Text style={styles.chartTitle}>{title}</Text>
+      <View style={styles.metricTop}>
+        <Text style={styles.chartTitle}>{title}</Text>
+        {viewMore ? (
+          <Pressable onPress={viewMore} hitSlop={8}>
+            <Text style={styles.viewMore}>View More</Text>
+          </Pressable>
+        ) : null}
+      </View>
       <View style={[styles.chartRow, { height: chartH }]}>
         {series.map((s, i) => {
           const raw = values[i] ?? 0;
@@ -116,7 +128,7 @@ function AreaChart({
           const stack = mode === "spend" ? s.by_category?.slice(0, 5) ?? [] : [];
           const stackTotal = stack.reduce((a, c) => a + Math.max(0, c.amount), 0) || 1;
           return (
-            <View key={s.key} style={styles.barCol}>
+            <Pressable key={s.key} style={styles.barCol} onPress={onBarPress}>
               <View style={styles.barCluster}>
                 {showComparison && priorH > 0 ? (
                   <View
@@ -161,7 +173,7 @@ function AreaChart({
                 )}
               </View>
               <Text style={styles.barLabel}>{s.label}</Text>
-            </View>
+            </Pressable>
           );
         })}
       </View>
@@ -169,44 +181,112 @@ function AreaChart({
   );
 }
 
-function CategoryBreakdown({
-  rows,
-  excludedSpend,
-}: {
-  rows: CashFlowCategoryBreakdown[];
-  excludedSpend: number;
-}) {
+function CategoryRows({ rows }: { rows: CashFlowCategoryBreakdown[] }) {
   const max = Math.max(1, ...rows.map((r) => Math.abs(r.amount)));
+  if (rows.length === 0) {
+    return <Text style={styles.cardHint}>No spending in this range</Text>;
+  }
   return (
-    <Card style={styles.breakdownCard}>
-      <Text style={styles.chartTitle}>Spending by category</Text>
-      {rows.length === 0 ? (
-        <Text style={styles.cardHint}>No spending in this range</Text>
-      ) : (
-        rows.slice(0, 8).map((r) => (
-          <View key={r.category_id ?? r.name} style={styles.catRow}>
-            <Text style={styles.catEmoji}>{r.emoji}</Text>
-            <View style={{ flex: 1 }}>
-              <View style={styles.catLabelRow}>
-                <Text style={styles.catName}>{r.name}</Text>
-                <Text style={styles.catAmt}>{usd(r.amount)}</Text>
-              </View>
-              <ProgressBar
-                progress={Math.abs(r.amount) / max}
-                color={r.color || colors.text}
-              />
+    <>
+      {rows.slice(0, 12).map((r) => (
+        <View key={r.category_id ?? r.name} style={styles.catRow}>
+          <Text style={styles.catEmoji}>{r.emoji}</Text>
+          <View style={{ flex: 1 }}>
+            <View style={styles.catLabelRow}>
+              <Text style={styles.catName}>{r.name}</Text>
+              <Text style={styles.catAmt}>{usd(r.amount)}</Text>
             </View>
+            <ProgressBar
+              progress={Math.abs(r.amount) / max}
+              color={r.color || colors.text}
+            />
           </View>
-        ))
-      )}
-      <View style={styles.excludedBlock}>
+        </View>
+      ))}
+    </>
+  );
+}
+
+/** Help Center: View More of Spending → Key Metrics + per-month/category + Excluded Transactions. */
+function SpendingViewMore({
+  data,
+  comparison,
+}: {
+  data: CashFlowRangePayload;
+  comparison: boolean;
+}) {
+  const excludedTxns: CashFlowExcludedTxnRow[] =
+    data.excluded_transactions ?? [];
+  const excludedCats: CashFlowCategoryBreakdown[] =
+    data.excluded_by_category ?? [];
+  return (
+    <View style={{ gap: spacing.sm }}>
+      <Card style={styles.breakdownCard}>
+        <Text style={styles.chartTitle}>Key Metrics · Spending</Text>
+        <Text style={styles.metricLine}>
+          Total spending {usd(data.spend)}
+        </Text>
+        <Text style={styles.cardHint}>
+          Range {data.start} → {data.end}
+          {data.include_excluded ? " · excluded spend included in totals" : ""}
+        </Text>
+        {comparison ? (
+          <Text style={styles.cardHint}>
+            Prior {usd(data.prior.spend)} · Δ {usd(data.spend_delta)}
+          </Text>
+        ) : null}
+      </Card>
+
+      <Card style={styles.breakdownCard}>
+        <Text style={styles.chartTitle}>Per month / period</Text>
+        {(data.series ?? []).length === 0 ? (
+          <Text style={styles.cardHint}>No period breakdown</Text>
+        ) : (
+          (data.series ?? []).map((s) => (
+            <View key={s.key} style={styles.periodRow}>
+              <Text style={styles.periodLabel}>{s.label}</Text>
+              <Text style={styles.periodAmt}>{usd(s.spend)}</Text>
+            </View>
+          ))
+        )}
+      </Card>
+
+      <Card style={styles.breakdownCard}>
+        <Text style={styles.chartTitle}>Spending by category</Text>
+        <CategoryRows rows={data.spending_by_category ?? []} />
+      </Card>
+
+      <Card style={styles.breakdownCard}>
         <Text style={styles.chartTitle}>Excluded Transactions</Text>
         <Text style={styles.cardHint}>
-          {usd(excludedSpend)} excluded from spend
-          {excludedSpend === 0 ? " (none in range)" : ""}
+          {usd(data.excluded_spend ?? 0)} excluded from spend
+          {(data.excluded_spend ?? 0) === 0 ? " (none in range)" : ""}
         </Text>
-      </View>
-    </Card>
+        {excludedCats.length > 0 ? (
+          <View style={{ marginTop: spacing.sm }}>
+            <Text style={styles.subSection}>By category</Text>
+            <CategoryRows rows={excludedCats} />
+          </View>
+        ) : null}
+        {excludedTxns.length > 0 ? (
+          <View style={{ marginTop: spacing.sm }}>
+            <Text style={styles.subSection}>Transactions</Text>
+            {excludedTxns.slice(0, 20).map((t) => (
+              <View key={t.id} style={styles.exclTxnRow}>
+                <Text style={styles.catEmoji}>{t.category_emoji}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.catName}>{t.name}</Text>
+                  <Text style={styles.cardHint}>
+                    {t.posted_at.slice(0, 10)} · {t.category_name}
+                  </Text>
+                </View>
+                <Text style={styles.catAmt}>{usd(t.amount)}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+      </Card>
+    </View>
   );
 }
 
@@ -341,18 +421,24 @@ export default function CashFlowScreen() {
             series={series}
             showComparison={comparison}
             mode="income"
+            viewMore={() => setDetail(detail === "income" ? null : "income")}
+            onBarPress={() => setDetail("income")}
           />
           <AreaChart
             title="Spending"
             series={series}
             showComparison={comparison}
             mode="spend"
+            viewMore={() => setDetail(detail === "spend" ? null : "spend")}
+            onBarPress={() => setDetail("spend")}
           />
           <AreaChart
             title="Net income"
             series={series}
             showComparison={comparison}
             mode="net"
+            viewMore={() => setDetail(detail === "net" ? null : "net")}
+            onBarPress={() => setDetail("net")}
           />
         </>
       ) : (
@@ -365,11 +451,8 @@ export default function CashFlowScreen() {
         </Card>
       )}
 
-      {(detail === "spend" || detail === null) && data ? (
-        <CategoryBreakdown
-          rows={data.spending_by_category ?? []}
-          excludedSpend={data.excluded_spend ?? 0}
-        />
+      {detail === "spend" && data ? (
+        <SpendingViewMore data={data} comparison={comparison} />
       ) : null}
 
       {detail === "income" && data ? (
@@ -379,6 +462,13 @@ export default function CashFlowScreen() {
             Total {usd(data.income)} · Prior range {usd(data.prior.income)} · Δ{" "}
             {usd(data.income_delta)}
           </Text>
+          <Text style={styles.subSection}>Per month / period</Text>
+          {(data.series ?? []).map((s) => (
+            <View key={s.key} style={styles.periodRow}>
+              <Text style={styles.periodLabel}>{s.label}</Text>
+              <Text style={styles.periodAmt}>{usd(s.income)}</Text>
+            </View>
+          ))}
         </Card>
       ) : null}
 
@@ -395,6 +485,13 @@ export default function CashFlowScreen() {
               {pct(data.net_delta_pct)})
             </Text>
           ) : null}
+          <Text style={styles.subSection}>Per month / period</Text>
+          {(data.series ?? []).map((s) => (
+            <View key={s.key} style={styles.periodRow}>
+              <Text style={styles.periodLabel}>{s.label}</Text>
+              <Text style={styles.periodAmt}>{usd(s.net)}</Text>
+            </View>
+          ))}
         </Card>
       ) : null}
 
@@ -521,6 +618,32 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
+  },
+  metricLine: { ...type.title3, fontSize: 20, marginBottom: 4 },
+  subSection: {
+    ...type.caption,
+    color: colors.textTertiary,
+    fontWeight: "700",
+    marginTop: spacing.sm,
+    marginBottom: 6,
+    textTransform: "uppercase",
+  },
+  periodRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  periodLabel: { ...type.callout, fontWeight: "600" },
+  periodAmt: { ...type.callout, fontWeight: "600" },
+  exclTxnRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
   rules: { ...type.footnote, marginTop: spacing.sm, lineHeight: 16 },
 });

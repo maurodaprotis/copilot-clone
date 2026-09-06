@@ -217,4 +217,50 @@ describe("Help Center cash flow ranges", () => {
     });
     expect(on.spend).toBe(140);
   });
+
+  it("lists excluded transactions and category rows for View More", () => {
+    const transactions = [
+      txn({
+        id: "s1",
+        type: "regular",
+        amount_reporting: 100,
+        category_id: "c-food",
+        posted_at: "2026-09-02T00:00:00Z",
+        name: "Groceries",
+      }),
+      txn({
+        id: "ex",
+        type: "regular",
+        review_status: "excluded",
+        amount_reporting: 40,
+        category_id: "c-food",
+        posted_at: "2026-09-03T00:00:00Z",
+        name: "Work lunch",
+      }),
+    ];
+    const categories = [
+      {
+        id: "c-food",
+        group_id: "g1",
+        name: "Food",
+        emoji: "🍔",
+        color: "#f00",
+        exclude_from_budget: false,
+        is_income_category: false,
+        archived: false,
+        sort_order: 0,
+      },
+    ];
+    const payload = computeCashFlowRangePayload({
+      transactions,
+      categories,
+      range: "mtd",
+      include_excluded: false,
+      now: new Date(Date.UTC(2026, 8, 5)),
+    });
+    expect(payload.excluded_spend).toBe(40);
+    expect(payload.excluded_by_category[0]?.amount).toBe(40);
+    expect(payload.excluded_transactions).toHaveLength(1);
+    expect(payload.excluded_transactions[0]?.name).toBe("Work lunch");
+  });
 });
