@@ -20,7 +20,7 @@ export function MasterDetail({ list, detail, style, split = true }: Props) {
   return (
     <View style={[styles.row, style]}>
       <View style={styles.list}>{list}</View>
-      <View style={styles.detail}>{detail}</View>
+      <View style={styles.detail} pointerEvents="auto">{detail}</View>
     </View>
   );
 }
@@ -45,5 +45,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     backgroundColor: colors.bgElevated,
+    zIndex: 2,
+    elevation: 2,
   },
 });

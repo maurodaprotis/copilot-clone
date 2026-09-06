@@ -27,6 +27,7 @@ import {
   ProgressBar,
   Screen,
   ScreenHeader,
+  Toggle,
 } from "../../src/ui";
 
 function usd(n: number): string {
@@ -39,6 +40,20 @@ function BudgetBar({ spent, budget }: { spent: number; budget: number }) {
     pct > 1 ? colors.overBudgetRed : pct > 0.8 ? colors.warning : colors.progressFill;
   return <ProgressBar progress={pct} color={color} height={4} />;
 }
+
+const EMOJI_CHOICES = ["📁", "☕", "🛒", "🍽️", "🚗", "🏠", "💊", "🎮", "✈️", "💵", "🎁", "📦"];
+const COLOR_CHOICES = [
+  "#94a3b8",
+  "#60A5FA",
+  "#34D399",
+  "#FBBF24",
+  "#F472B6",
+  "#A78BFA",
+  "#F87171",
+  "#2DD4BF",
+  "#10B981",
+  "#FB923C",
+];
 
 type Overview = {
   groups: CategoryGroup[];
@@ -85,6 +100,10 @@ export default function CategoriesScreen() {
   const [newName, setNewName] = useState("");
   const [newGroupId, setNewGroupId] = useState("grp-other");
   const [newIncome, setNewIncome] = useState(false);
+  const [newEmoji, setNewEmoji] = useState("📁");
+  const [newColor, setNewColor] = useState("#94a3b8");
+  const [includeInSpent, setIncludeInSpent] = useState(true);
+  const [newBudget, setNewBudget] = useState("100");
   const [groupList, setGroupList] = useState<CategoryGroup[]>([]);
 
   const applyOverview = useCallback((overview: Overview) => {
@@ -165,6 +184,18 @@ export default function CategoriesScreen() {
     }
   }
 
+  function resetCreateForm() {
+    setNewName("");
+    setNewIncome(false);
+    setNewEmoji("📁");
+    setNewColor("#94a3b8");
+    setIncludeInSpent(true);
+    setNewBudget("100");
+    const firstExpense =
+      groupList.find((g) => g.id !== "grp-income")?.id ?? "grp-other";
+    setNewGroupId(firstExpense);
+  }
+
   async function onCreateCategory() {
     const name = newName.trim();
     if (!name) {
@@ -176,19 +207,29 @@ export default function CategoriesScreen() {
     try {
       const isIncome = newIncome;
       const groupId = isIncome ? "grp-income" : newGroupId;
+      // Copilot: "Include in total spent and budget" — off ⇒ exclude_from_budget.
+      const exclude = isIncome ? true : !includeInSpent;
       const { id } = await upsertCategory({
         name,
         group_id: groupId,
+        emoji: newEmoji,
+        color: newColor,
         is_income_category: isIncome,
-        exclude_from_budget: isIncome,
+        exclude_from_budget: exclude,
       });
+      const budgetN = Number(newBudget);
+      if (!isIncome && !exclude && Number.isFinite(budgetN) && budgetN >= 0) {
+        await setBudgetAmount({
+          category_id: id,
+          year_month: yearMonth,
+          budgeted_amount: budgetN,
+        });
+      }
       await syncOutbox(createApiTransport()).catch(() => ({ pushed: 0 }));
       setCreateOpen(false);
-      setNewName("");
-      setNewIncome(false);
+      resetCreateForm();
       await reload();
       setMsg(`Created ${name}`);
-      void id;
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally {
@@ -206,11 +247,9 @@ export default function CategoriesScreen() {
           <PrimaryButton
             label="+ Add"
             onPress={() => {
+              resetCreateForm();
               setCreateOpen(true);
               setMsg(null);
-              const firstExpense =
-                groupList.find((g) => g.id !== "grp-income")?.id ?? "grp-other";
-              setNewGroupId(firstExpense);
             }}
             style={{ minHeight: 36, paddingVertical: 8, minWidth: 64 }}
           />
@@ -343,45 +382,109 @@ export default function CategoriesScreen() {
           />
           <View style={styles.modalCard} pointerEvents="auto">
             <Text style={styles.modalTitle}>New category</Text>
-            <Text style={styles.modalHint}>Saved to the Worker (syncs on web)</Text>
+            <Text style={styles.modalHint}>
+              Name, icon/color, include-in-spent, optional budget
+            </Text>
             <TextInput
               style={styles.input}
               value={newName}
               onChangeText={setNewName}
-              placeholder="Name (e.g. Coffee)"
+              placeholder="Category name"
               placeholderTextColor={colors.textTertiary}
+              autoFocus
             />
+            <Text style={styles.fieldLabel}>Icon</Text>
+            <View style={styles.choiceRow}>
+              {EMOJI_CHOICES.map((e) => (
+                <Pressable
+                  key={e}
+                  onPress={() => setNewEmoji(e)}
+                  style={[styles.emojiChip, newEmoji === e && styles.emojiChipOn]}
+                >
+                  <Text style={{ fontSize: 18 }}>{e}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.fieldLabel}>Color</Text>
+            <View style={styles.choiceRow}>
+              {COLOR_CHOICES.map((c) => (
+                <Pressable
+                  key={c}
+                  onPress={() => setNewColor(c)}
+                  style={[
+                    styles.colorChip,
+                    { backgroundColor: c },
+                    newColor === c && styles.colorChipOn,
+                  ]}
+                />
+              ))}
+            </View>
             <View style={styles.modalActions}>
               <PrimaryButton
                 label={newIncome ? "Income" : "Expense"}
                 variant="secondary"
                 onPress={() => {
-                  setNewIncome((v) => !v);
-                  if (!newIncome) setNewGroupId("grp-income");
+                  setNewIncome((v) => {
+                    const next = !v;
+                    if (next) {
+                      setNewGroupId("grp-income");
+                      setNewEmoji("💵");
+                      setNewColor("#10B981");
+                      setIncludeInSpent(false);
+                    } else {
+                      setNewEmoji("📁");
+                      setNewColor("#94a3b8");
+                      setIncludeInSpent(true);
+                    }
+                    return next;
+                  });
                 }}
                 style={{ flex: 1 }}
               />
             </View>
             {!newIncome ? (
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+              <View style={styles.choiceRow}>
                 {groupList
                   .filter((g) => g.id !== "grp-income")
                   .map((g) => (
                     <Pressable
                       key={g.id}
                       onPress={() => setNewGroupId(g.id)}
-                      style={{
-                        paddingHorizontal: 10,
-                        paddingVertical: 6,
-                        borderRadius: 999,
-                        backgroundColor:
-                          newGroupId === g.id ? colors.accentBlueSoft : colors.bgMuted,
-                      }}
+                      style={[
+                        styles.groupChip,
+                        newGroupId === g.id && styles.groupChipOn,
+                      ]}
                     >
-                      <Text style={{ ...type.footnote, fontWeight: "600" }}>{g.name}</Text>
+                      <Text style={styles.groupChipText}>{g.name}</Text>
                     </Pressable>
                   ))}
               </View>
+            ) : null}
+            {!newIncome ? (
+              <View style={styles.toggleRow}>
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <Text style={styles.toggleTitle}>
+                    Include in total spent and budget
+                  </Text>
+                  <Text style={styles.modalHint}>
+                    Off excludes this category from spent totals
+                  </Text>
+                </View>
+                <Toggle value={includeInSpent} onChange={setIncludeInSpent} />
+              </View>
+            ) : null}
+            {!newIncome && includeInSpent ? (
+              <>
+                <Text style={styles.fieldLabel}>Budget</Text>
+                <TextInput
+                  style={styles.input}
+                  value={newBudget}
+                  onChangeText={setNewBudget}
+                  keyboardType="decimal-pad"
+                  placeholder="100.00"
+                  placeholderTextColor={colors.textTertiary}
+                />
+              </>
             ) : null}
             <View style={styles.modalActions}>
               <PrimaryButton
@@ -394,6 +497,7 @@ export default function CategoriesScreen() {
                 label="Create"
                 onPress={() => void onCreateCategory()}
                 loading={saving}
+                disabled={!newName.trim()}
                 style={{ flex: 1 }}
               />
             </View>
@@ -478,5 +582,56 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 16,
   },
-  modalActions: { flexDirection: "row", gap: spacing.sm },
+  modalActions: { flexDirection: "row", gap: spacing.sm, marginTop: 4 },
+  fieldLabel: {
+    ...type.footnote,
+    fontWeight: "600",
+    marginBottom: 6,
+    color: colors.textSecondary,
+  },
+  choiceRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 12,
+  },
+  emojiChip: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.bgMuted,
+  },
+  emojiChipOn: {
+    backgroundColor: colors.accentBlueSoft,
+    borderWidth: 1.5,
+    borderColor: colors.accentBlue,
+  },
+  colorChip: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  colorChipOn: {
+    borderColor: colors.textPrimary,
+  },
+  groupChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.bgMuted,
+  },
+  groupChipOn: {
+    backgroundColor: colors.accentBlueSoft,
+  },
+  groupChipText: { ...type.footnote, fontWeight: "600" },
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+  toggleTitle: { ...type.callout, fontWeight: "600", marginBottom: 2 },
 });
