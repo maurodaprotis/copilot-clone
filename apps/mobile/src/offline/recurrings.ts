@@ -1,4 +1,6 @@
 import type { Recurring, RecurringCadence, RecurringKind } from "@copilot-clone/domain";
+import { isWebRuntime } from "../db/runtime";
+import { webSyncOrEnqueue } from "./webSyncWrite";
 import {
   DEFAULT_UPCOMING_WITHIN_DAYS,
   upcomingRecurrings,
@@ -101,10 +103,35 @@ export async function upsertRecurringLocal(
   },
   dbOverride?: LocalDb,
 ): Promise<string> {
-  const db = await dbOr(dbOverride);
   const id = input.id ?? crypto.randomUUID();
   const now = new Date().toISOString();
   const active = input.active === false ? 0 : 1;
+  const payload = {
+    op: "recurring_upsert" as const,
+    id,
+    name: input.name,
+    kind: input.kind,
+    cadence: input.cadence,
+    expected_amount: Number(input.expected_amount),
+    currency: input.currency.toUpperCase(),
+    category_id: input.category_id ?? null,
+    account_id: input.account_id ?? null,
+    next_expected_date: input.next_expected_date.slice(0, 10),
+    active: active === 1,
+    updated_at: now,
+  };
+
+  // Pages / web: never touch expo-sqlite — push recurring_upsert straight to Worker.
+  if (!dbOverride && isWebRuntime()) {
+    await webSyncOrEnqueue({
+      payload,
+      entity_type: "recurring",
+      entity_id: id,
+    });
+    return id;
+  }
+
+  const db = await dbOr(dbOverride);
   await db.runAsync(
     `INSERT INTO recurrings (
        id, name, kind, cadence, expected_amount, currency,
@@ -133,20 +160,7 @@ export async function upsertRecurringLocal(
     active,
     now,
   );
-  await enqueue(db, "recurring", id, {
-    op: "recurring_upsert",
-    id,
-    name: input.name,
-    kind: input.kind,
-    cadence: input.cadence,
-    expected_amount: Number(input.expected_amount),
-    currency: input.currency.toUpperCase(),
-    category_id: input.category_id ?? null,
-    account_id: input.account_id ?? null,
-    next_expected_date: input.next_expected_date.slice(0, 10),
-    active: active === 1,
-    updated_at: now,
-  });
+  await enqueue(db, "recurring", id, payload);
   return id;
 }
 

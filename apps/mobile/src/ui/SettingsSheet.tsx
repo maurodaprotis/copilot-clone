@@ -12,12 +12,11 @@ export type SettingsNavId =
   | "fx"
   | "about";
 
-const NAV: { id: SettingsNavId; label: string; section: string }[] = [
+const NAV: { id: SettingsNavId; label: string; section: string; badge?: boolean }[] = [
   { id: "general", label: "General", section: "SETTINGS" },
   { id: "account", label: "Account", section: "SETTINGS" },
-  { id: "subscription", label: "Subscription", section: "SETTINGS" },
-  { id: "banks", label: "Banks", section: "CONNECTIONS" },
-  { id: "fx", label: "FX & Import", section: "CONNECTIONS" },
+  { id: "subscription", label: "Subscription", section: "SETTINGS", badge: true },
+  { id: "banks", label: "Banks & institutions", section: "CONNECTIONS" },
   { id: "about", label: "About", section: "SUPPORT" },
 ];
 
@@ -74,9 +73,12 @@ export function SettingsSheet({
                     onPress={() => setNav(item.id)}
                     style={[styles.navItem, on && styles.navItemOn]}
                   >
-                    <Text style={[styles.navText, on && styles.navTextOn]}>
-                      {item.label}
-                    </Text>
+                    <View style={styles.navRow}>
+                      <Text style={[styles.navText, on && styles.navTextOn]}>
+                        {item.label}
+                      </Text>
+                      {item.badge ? <View style={styles.navBadge} /> : null}
+                    </View>
                   </Pressable>
                 );
               })}
@@ -158,6 +160,13 @@ const styles = StyleSheet.create({
   navItemOn: { backgroundColor: colors.bgSidebarActive },
   navText: { ...type.callout, color: colors.textSecondary, fontWeight: "600" },
   navTextOn: { color: colors.accentBlue },
+  navRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  navBadge: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.accentBlue,
+  },
   pane: { flex: 1, minWidth: 0, backgroundColor: colors.bgPage },
   paneHeader: {
     flexDirection: "row",
