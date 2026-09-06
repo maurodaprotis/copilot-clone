@@ -82,6 +82,7 @@ export default function RootLayout() {
         <Stack screenOptions={headerOpts}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="accounts" options={{ title: "Accounts" }} />
+          <Stack.Screen name="investments" options={{ title: "Investments", headerShown: false }} />
           <Stack.Screen
             name="settings"
             options={{

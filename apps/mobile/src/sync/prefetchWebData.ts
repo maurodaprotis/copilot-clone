@@ -24,5 +24,6 @@ export async function prefetchWebApiData(): Promise<void> {
     listAllTransactions(),
     fetch(`${base}/dashboard/spending?month=${month}`, { headers }),
     fetch(`${base}/cash-flow?range=mtd&comparison=true&include_excluded=false`, { headers }),
+    fetch(`${base}/investments?range=1W`, { headers }),
   ]);
 }

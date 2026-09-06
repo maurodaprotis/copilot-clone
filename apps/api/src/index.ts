@@ -101,6 +101,12 @@ app.get("/cash-flow", async (c) => {
 
 app.get("/accounts", async (c) => proxyDo(c, "/accounts"));
 
+app.get("/investments", async (c) => {
+  const range = c.req.query("range");
+  const q = range ? `?range=${encodeURIComponent(range)}` : "";
+  return proxyDo(c, `/investments${q}`);
+});
+
 app.get("/rules", async (c) => proxyDo(c, "/rules"));
 
 app.get("/tags", async (c) => proxyDo(c, "/tags"));

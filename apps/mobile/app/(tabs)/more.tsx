@@ -6,7 +6,7 @@ import { Card, ListRow, Screen, ScreenHeader, SectionLabel } from "../../src/ui"
 const ITEMS: { title: string; href: string; icon: string; section: string }[] = [
   { section: "Money", title: "Accounts", href: "/accounts", icon: "🏦" },
   { section: "Money", title: "Recurring", href: "/recurrings", icon: "🔁" },
-  { section: "Money", title: "Investments", href: "/accounts", icon: "📈" },
+  { section: "Money", title: "Investments", href: "/investments", icon: "📈" },
   { section: "Data", title: "Import CSV", href: "/import", icon: "📄" },
   { section: "Data", title: "Settings", href: "/settings", icon: "⚙️" },
   { section: "Support", title: "About / Support", href: "/settings", icon: "ℹ️" },

@@ -17,16 +17,28 @@ const NAV: NavItem[] = [
     match: (p) => p === "/" || p === "" || p.endsWith("/(tabs)") || p.endsWith("/(tabs)/"),
   },
   {
-    label: "Categories",
-    href: "/categories",
-    glyph: "▦",
-    match: (p) => p.includes("categories"),
-  },
-  {
     label: "Transactions",
     href: "/transactions",
     glyph: "☰",
     match: (p) => p.includes("transactions"),
+  },
+  {
+    label: "Accounts",
+    href: "/accounts",
+    glyph: "🏦",
+    match: (p) => p.includes("accounts") && !p.includes("investments"),
+  },
+  {
+    label: "Investments",
+    href: "/investments",
+    glyph: "📈",
+    match: (p) => p.includes("investments"),
+  },
+  {
+    label: "Categories",
+    href: "/categories",
+    glyph: "▦",
+    match: (p) => p.includes("categories"),
   },
   {
     label: "Cash Flow",
@@ -40,7 +52,6 @@ const NAV: NavItem[] = [
     glyph: "•••",
     match: (p) =>
       p.includes("more") ||
-      p.includes("accounts") ||
       p.includes("import") ||
       p.includes("recurrings") ||
       p.includes("rules") ||

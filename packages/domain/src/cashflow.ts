@@ -381,6 +381,77 @@ export function cashFlowSpendByCategory(input: {
   return rows;
 }
 
+
+/** Excluded spend by category (View More → Excluded Transactions). */
+export function cashFlowExcludedByCategory(input: {
+  transactions: Transaction[];
+  categories?: Category[];
+  start: string;
+  end: string;
+}): CashFlowCategoryBreakdown[] {
+  const byId = new Map<string | null, number>();
+  for (const txn of input.transactions) {
+    if (!inDateRange(txn.posted_at, input.start, input.end)) continue;
+    const delta = cashFlowExcludedSpendDelta(txn);
+    if (delta === 0) continue;
+    const key = txn.category_id;
+    byId.set(key, (byId.get(key) ?? 0) + delta);
+  }
+  const catMap = new Map((input.categories ?? []).map((c) => [c.id, c]));
+  const rows: CashFlowCategoryBreakdown[] = [];
+  for (const [category_id, amount] of byId) {
+    if (Math.abs(amount) < 0.0001) continue;
+    const cat = category_id ? catMap.get(category_id) : undefined;
+    rows.push({
+      category_id,
+      name: cat?.name ?? (category_id ? "Unknown" : "Uncategorized"),
+      emoji: cat?.emoji ?? "📦",
+      color: cat?.color ?? "#94A3B8",
+      amount,
+    });
+  }
+  rows.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+  return rows;
+}
+
+export type CashFlowExcludedTxnRow = {
+  id: string;
+  name: string;
+  posted_at: string;
+  amount: number;
+  category_id: string | null;
+  category_name: string;
+  category_emoji: string;
+};
+
+/** Individual excluded regular txns in range (Help Center Excluded Transactions). */
+export function cashFlowExcludedTransactions(input: {
+  transactions: Transaction[];
+  categories?: Category[];
+  start: string;
+  end: string;
+}): CashFlowExcludedTxnRow[] {
+  const catMap = new Map((input.categories ?? []).map((c) => [c.id, c]));
+  const rows: CashFlowExcludedTxnRow[] = [];
+  for (const txn of input.transactions) {
+    if (!inDateRange(txn.posted_at, input.start, input.end)) continue;
+    const delta = cashFlowExcludedSpendDelta(txn);
+    if (delta === 0) continue;
+    const cat = txn.category_id ? catMap.get(txn.category_id) : undefined;
+    rows.push({
+      id: txn.id,
+      name: txn.name?.trim() || txn.note?.trim() || "Excluded transaction",
+      posted_at: txn.posted_at,
+      amount: delta,
+      category_id: txn.category_id,
+      category_name: cat?.name ?? (txn.category_id ? "Unknown" : "Uncategorized"),
+      category_emoji: cat?.emoji ?? "📦",
+    });
+  }
+  rows.sort((a, b) => b.posted_at.localeCompare(a.posted_at));
+  return rows;
+}
+
 export type CashFlowRangeSeriesPoint = {
   /** Bucket label (YYYY-MM or week start YYYY-MM-DD). */
   key: string;
@@ -522,6 +593,8 @@ export type CashFlowRangePayload = {
   net_delta_pct: number | null;
   series: CashFlowRangeSeriesPoint[];
   spending_by_category: CashFlowCategoryBreakdown[];
+  excluded_by_category: CashFlowCategoryBreakdown[];
+  excluded_transactions: CashFlowExcludedTxnRow[];
   /** Legacy month fields for older clients */
   year_month: string;
 };
@@ -579,6 +652,18 @@ export function computeCashFlowRangePayload(input: {
     end: window.end,
     include_excluded,
   });
+  const excluded_by_category = cashFlowExcludedByCategory({
+    transactions: input.transactions,
+    categories: input.categories,
+    start: window.start,
+    end: window.end,
+  });
+  const excluded_transactions = cashFlowExcludedTransactions({
+    transactions: input.transactions,
+    categories: input.categories,
+    start: window.start,
+    end: window.end,
+  });
 
   return {
     range: window.key,
@@ -601,6 +686,8 @@ export function computeCashFlowRangePayload(input: {
     net_delta_pct,
     series,
     spending_by_category,
+    excluded_by_category,
+    excluded_transactions,
     year_month: window.end.slice(0, 7),
   };
 }
