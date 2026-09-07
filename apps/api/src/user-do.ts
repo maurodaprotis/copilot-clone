@@ -358,17 +358,23 @@ export class UserDO extends DurableObject<Env> {
   }
 
   private seedFxIfNeeded(): void {
-    const existing = [
-      ...this.ctx.storage.sql.exec(
-        `SELECT 1 as ok FROM fx_rates
-         WHERE from_currency = 'USD' AND to_currency = 'ARS' LIMIT 1`,
-      ),
-    ];
-    if (existing.length > 0) return;
-
+    // Ensure demo USD/ARS rows exist for seed as-of + today without clobbering
+    // manual edits (INSERT OR IGNORE / skip when key already present).
     for (const row of seedFxRates()) {
+      const hit = [
+        ...this.ctx.storage.sql.exec(
+          `SELECT 1 as ok FROM fx_rates
+           WHERE from_currency = ? AND to_currency = ? AND on_date = ? AND rate_book = ?
+           LIMIT 1`,
+          row.from,
+          row.to,
+          row.on_date,
+          row.rate_book,
+        ),
+      ];
+      if (hit.length > 0) continue;
       this.ctx.storage.sql.exec(
-        `INSERT OR REPLACE INTO fx_rates (from_currency, to_currency, on_date, rate, rate_book, source)
+        `INSERT INTO fx_rates (from_currency, to_currency, on_date, rate, rate_book, source)
          VALUES (?, ?, ?, ?, ?, ?)`,
         row.from,
         row.to,
