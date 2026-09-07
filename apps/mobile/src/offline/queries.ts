@@ -2,6 +2,7 @@ import { normalizeReviewStatus } from "@copilot-clone/domain";
 import { isWebRuntime } from "../db/runtime";
 import type { LocalDb } from "../db/types";
 import { getApiUserId } from "../sync/userId";
+import { dedupeTransactionsById } from "./periodMetrics";
 
 export type LocalTransaction = {
   id: string;
@@ -20,6 +21,8 @@ export type LocalTransaction = {
   synced: number;
   created_at: string;
   updated_at: string;
+  /** Present when API/SQL soft-delete column is selected. */
+  deleted_at?: string | null;
 };
 
 // Avoid importing ../config (expo-constants) so vitest/node stays RN-free.
@@ -28,32 +31,68 @@ const DEFAULT_API_URL =
   (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_API_URL) ||
   "https://copilot-clone-api.maurodaprotis.workers.dev";
 
+function isSoftDeleted(row: {
+  deleted_at?: string | null;
+}): boolean {
+  return row.deleted_at != null && String(row.deleted_at) !== "";
+}
+
 function normalizeTxn(row: LocalTransaction): LocalTransaction {
   return {
     ...row,
     review_status: normalizeReviewStatus(row.review_status),
+    deleted_at: row.deleted_at ?? null,
   };
 }
 
-function mapApiTxn(raw: Record<string, unknown>): LocalTransaction {
+function mapApiTxn(raw: Record<string, unknown>): LocalTransaction | null {
+  // Soft-deleted must never enter client lists / metrics.
+  if (isSoftDeleted({ deleted_at: raw.deleted_at as string | null })) {
+    return null;
+  }
+
+  // Prefer explicit amount_reporting. Never treat amount as a second addend.
+  const hasReporting =
+    raw.amount_reporting != null && raw.amount_reporting !== "";
+  const amount = Number(raw.amount);
+  const amount_reporting = hasReporting
+    ? Number(raw.amount_reporting)
+    : Number.isFinite(amount)
+      ? amount
+      : 0;
+
   return normalizeTxn({
     id: String(raw.id),
     account_id: String(raw.account_id),
     category_id: raw.category_id == null ? null : String(raw.category_id),
-    amount: Number(raw.amount),
-    currency: String(raw.currency),
+    amount: Number.isFinite(amount) ? amount : 0,
+    currency: String(raw.currency ?? "USD"),
     amount_account: Number(raw.amount_account ?? raw.amount ?? 0),
-    amount_reporting: Number(raw.amount_reporting ?? raw.amount ?? 0),
+    amount_reporting: Number.isFinite(amount_reporting) ? amount_reporting : 0,
     type: String(raw.type ?? "regular"),
     is_refund: Number(raw.is_refund ?? 0) ? 1 : 0,
     review_status: String(raw.review_status ?? "needs_review"),
     posted_at: String(raw.posted_at ?? ""),
-    note: raw.note == null ? (raw.name == null ? null : String(raw.name)) : String(raw.note),
+    note:
+      raw.note == null
+        ? raw.name == null
+          ? null
+          : String(raw.name)
+        : String(raw.note),
     fingerprint: raw.fingerprint == null ? null : String(raw.fingerprint),
     synced: Number(raw.synced ?? 1) ? 1 : 0,
     created_at: String(raw.created_at ?? raw.posted_at ?? ""),
     updated_at: String(raw.updated_at ?? raw.posted_at ?? ""),
+    deleted_at: null,
   });
+}
+
+/** Replace-by-id: remote snapshot wins; never append duplicates. */
+export function replaceTransactionsById(
+  _prev: LocalTransaction[],
+  next: LocalTransaction[],
+): LocalTransaction[] {
+  return dedupeTransactionsById(next);
 }
 
 async function fetchTransactionsFromApi(options?: {
@@ -70,9 +109,16 @@ async function fetchTransactionsFromApi(options?: {
       cache: "no-store",
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { transactions?: Record<string, unknown>[] };
+    const data = (await res.json()) as {
+      transactions?: Record<string, unknown>[];
+    };
     if (!Array.isArray(data.transactions)) return null;
-    return data.transactions.map(mapApiTxn);
+    const mapped: LocalTransaction[] = [];
+    for (const raw of data.transactions) {
+      const row = mapApiTxn(raw);
+      if (row) mapped.push(row);
+    }
+    return dedupeTransactionsById(mapped);
   } catch {
     return null;
   }
@@ -95,7 +141,9 @@ export async function listToReview(
      WHERE review_status IN ('needs_review', 'pending')
      ORDER BY posted_at DESC`,
   );
-  return rows.map(normalizeTxn);
+  return dedupeTransactionsById(
+    rows.map(normalizeTxn).filter((t) => !isSoftDeleted(t)),
+  );
 }
 
 export async function listAllTransactions(
@@ -109,7 +157,9 @@ export async function listAllTransactions(
   const rows = await db.getAllAsync<LocalTransaction>(
     `SELECT * FROM transactions ORDER BY posted_at DESC`,
   );
-  return rows.map(normalizeTxn);
+  return dedupeTransactionsById(
+    rows.map(normalizeTxn).filter((t) => !isSoftDeleted(t)),
+  );
 }
 
 export async function countOutbox(dbOverride?: LocalDb): Promise<number> {
@@ -127,4 +177,6 @@ export async function countOutbox(dbOverride?: LocalDb): Promise<number> {
 export const __test = {
   fetchTransactionsFromApi,
   mapApiTxn,
+  dedupeTransactionsById,
+  replaceTransactionsById,
 };

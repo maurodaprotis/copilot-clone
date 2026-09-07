@@ -4,7 +4,7 @@
  * when the payload is valid (queued offline if needed).
  */
 
-import { enqueueWebOutbox } from "./webOutbox";
+import { enqueueWebOutbox, removeWebOutboxForEntity } from "./webOutbox";
 import { getApiUserId } from "../sync/userId";
 
 const DEFAULT_API_URL =
@@ -50,8 +50,6 @@ export async function postSyncItems(
     };
   }
   const saved = Array.isArray(data.saved) ? data.saved : [];
-  // Treat empty saved as failure when we sent items — otherwise outbox would
-  // drop payloads that never landed in the UserDO.
   if (items.length > 0 && saved.length === 0) {
     return { ok: false, saved, error: "sync returned empty saved" };
   }
@@ -59,7 +57,8 @@ export async function postSyncItems(
 }
 
 /**
- * POST one sync item; if the network/API fails, queue in localStorage outbox.
+ * POST one sync item; if the network/API fails, enqueue in localStorage outbox.
+ * On success, drop any queued rows for the same entity (no double-apply on drain).
  */
 export async function webSyncOrEnqueue(input: {
   payload: unknown;
@@ -76,10 +75,11 @@ export async function webSyncOrEnqueue(input: {
       fetchImpl: input.fetchImpl,
     });
     if (result.ok) {
+      removeWebOutboxForEntity(input.entity_type, input.entity_id);
       return { outboxId: `web-api:${input.entity_id}`, queued: false };
     }
   } catch {
-    // offline / DNS / CORS — queue
+    // offline / DNS / CORS — enqueue
   }
 
   const row = enqueueWebOutbox({

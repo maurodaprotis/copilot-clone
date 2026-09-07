@@ -112,7 +112,7 @@ export async function getCategoryBudgetOverview(
     listBudgetMonths(yearMonth, db),
     db.getAllAsync<LocalTransaction>("SELECT * FROM transactions"),
   ]);
-  const transactions = txnRows.map(toDomainTxn);
+  const transactions = txnRows.filter((r) => !(r as { deleted_at?: string | null }).deleted_at).map(toDomainTxn);
   const rows = buildCategoryBudgetRows({
     categories,
     budgets,
@@ -145,7 +145,7 @@ export async function getSpendingLine(
   const txnRows = await db.getAllAsync<LocalTransaction>(
     "SELECT * FROM transactions",
   );
-  const transactions = txnRows.map(toDomainTxn);
+  const transactions = txnRows.filter((r) => !(r as { deleted_at?: string | null }).deleted_at).map(toDomainTxn);
   const categories = overview.rows.map((r) => r.category);
   const cumulative = cumulativeSpendByDay({
     transactions,

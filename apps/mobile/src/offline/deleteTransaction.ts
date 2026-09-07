@@ -5,7 +5,7 @@ import { webSyncOrEnqueue } from "./webSyncWrite";
 /**
  * Soft-delete a transaction (sync op `delete`).
  * - Web / Pages: POST delete to Worker (queues web outbox offline).
- * - Native: mark local row + outbox enqueue (or remove if no synced column path).
+ * - Native: soft-delete local row when deleted_at exists; else hard-delete + outbox.
  */
 export async function deleteTransaction(
   transactionId: string,
@@ -30,14 +30,14 @@ export async function deleteTransaction(
   const outboxId = crypto.randomUUID();
 
   await db.withTransactionAsync(async () => {
-    // Soft-delete if column exists; otherwise hard-delete local row.
+    // Prefer soft-delete so metrics queries that forget the filter still can exclude.
     try {
       await db.runAsync(
-        `UPDATE transactions SET review_status = review_status, updated_at = ?, synced = 0 WHERE id = ?`,
+        `UPDATE transactions SET deleted_at = ?, updated_at = ?, synced = 0 WHERE id = ?`,
+        now,
         now,
         transactionId,
       );
-      await db.runAsync(`DELETE FROM transactions WHERE id = ?`, transactionId);
     } catch {
       await db.runAsync(`DELETE FROM transactions WHERE id = ?`, transactionId);
     }

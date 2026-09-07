@@ -196,7 +196,7 @@ export async function getAccountsOverview(dbOverride?: LocalDb) {
   const on_date = new Date().toISOString().slice(0, 10);
   const built = buildAccountBalanceRows({
     accounts,
-    transactions: txnRows.map(toDomainTxn),
+    transactions: txnRows.filter((r) => !(r as { deleted_at?: string | null }).deleted_at).map(toDomainTxn),
     reporting_currency: "USD",
     on_date,
     rate_book: rateBook,
