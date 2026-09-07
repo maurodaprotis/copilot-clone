@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import {
   CASH_FLOW_RANGE_KEYS,
@@ -16,11 +16,13 @@ import { getCashFlowRangeOverview } from "../../src/offline/cashflow";
 import { colors, radius, spacing, type } from "../../src/theme";
 import {
   Card,
+  MasterDetail,
   ProgressBar,
   Screen,
   ScreenHeader,
   SegmentedControl,
   Toggle,
+  useIsDesktopWeb,
 } from "../../src/ui";
 
 function usd(n: number): string {
@@ -99,7 +101,6 @@ function AreaChart({
     ...values.map((v) => Math.abs(v)),
     ...priorValues.map((v) => Math.abs(v)),
   );
-  const chartH = 110;
   const barColor =
     mode === "income"
       ? colors.incomeGreen
@@ -117,16 +118,18 @@ function AreaChart({
           </Pressable>
         ) : null}
       </View>
-      <View style={[styles.chartRow, { height: chartH }]}>
+      <View style={[styles.chartRow, { height: 110 }]}>
         {series.map((s, i) => {
           const raw = values[i] ?? 0;
-          const h = Math.max(2, (Math.abs(raw) / maxY) * (chartH - 20));
+          const h = Math.max(2, (Math.abs(raw) / maxY) * 90);
           const priorH =
             showComparison && priorValues[i] != null
-              ? Math.max(2, (Math.abs(priorValues[i]!) / maxY) * (chartH - 20))
+              ? Math.max(2, (Math.abs(priorValues[i]!) / maxY) * 90)
               : 0;
-          const stack = mode === "spend" ? s.by_category?.slice(0, 5) ?? [] : [];
-          const stackTotal = stack.reduce((a, c) => a + Math.max(0, c.amount), 0) || 1;
+          const cats =
+            mode === "spend" ? (s.by_category?.slice(0, 5) ?? []) : [];
+          const catSum =
+            cats.reduce((acc, c) => acc + Math.max(0, c.amount), 0) || 1;
           return (
             <Pressable key={s.key} style={styles.barCol} onPress={onBarPress}>
               <View style={styles.barCluster}>
@@ -138,12 +141,12 @@ function AreaChart({
                     ]}
                   />
                 ) : null}
-                {mode === "spend" && stack.length > 0 ? (
+                {mode === "spend" && cats.length > 0 ? (
                   <View style={[styles.stackBar, { height: h }]}>
-                    {stack.map((c) => {
+                    {cats.map((c) => {
                       const segH = Math.max(
                         1,
-                        (Math.max(0, c.amount) / stackTotal) * h,
+                        (Math.max(0, c.amount) / catSum) * h,
                       );
                       return (
                         <View
@@ -222,7 +225,7 @@ function SpendingViewMore({
   return (
     <View style={{ gap: spacing.sm }}>
       <Card style={styles.breakdownCard}>
-        <Text style={styles.chartTitle}>Key Metrics · Spending</Text>
+        <Text style={styles.chartTitle}>KEY METRICS · SPENDING</Text>
         <Text style={styles.metricLine}>
           Total spending {usd(data.spend)}
         </Text>
@@ -238,7 +241,7 @@ function SpendingViewMore({
       </Card>
 
       <Card style={styles.breakdownCard}>
-        <Text style={styles.chartTitle}>Per month / period</Text>
+        <Text style={styles.chartTitle}>PER MONTH / PERIOD</Text>
         {(data.series ?? []).length === 0 ? (
           <Text style={styles.cardHint}>No period breakdown</Text>
         ) : (
@@ -252,12 +255,12 @@ function SpendingViewMore({
       </Card>
 
       <Card style={styles.breakdownCard}>
-        <Text style={styles.chartTitle}>Spending by category</Text>
+        <Text style={styles.chartTitle}>SPENDING BY CATEGORY</Text>
         <CategoryRows rows={data.spending_by_category ?? []} />
       </Card>
 
       <Card style={styles.breakdownCard}>
-        <Text style={styles.chartTitle}>Excluded Transactions</Text>
+        <Text style={styles.chartTitle}>EXCLUDED TRANSACTIONS</Text>
         <Text style={styles.cardHint}>
           {usd(data.excluded_spend ?? 0)} excluded from spend
           {(data.excluded_spend ?? 0) === 0 ? " (none in range)" : ""}
@@ -290,13 +293,97 @@ function SpendingViewMore({
   );
 }
 
+function IncomeViewMore({ data }: { data: CashFlowRangePayload }) {
+  return (
+    <Card style={styles.breakdownCard}>
+      <Text style={styles.chartTitle}>KEY METRICS · INCOME</Text>
+      <Text style={styles.cardHint}>
+        Total {usd(data.income)} · Prior range {usd(data.prior.income)} · Δ{" "}
+        {usd(data.income_delta)}
+      </Text>
+      <Text style={styles.subSection}>Per month / period</Text>
+      {(data.series ?? []).map((s) => (
+        <View key={s.key} style={styles.periodRow}>
+          <Text style={styles.periodLabel}>{s.label}</Text>
+          <Text style={styles.periodAmt}>{usd(s.income)}</Text>
+        </View>
+      ))}
+    </Card>
+  );
+}
+
+function NetViewMore({
+  data,
+  comparison,
+}: {
+  data: CashFlowRangePayload;
+  comparison: boolean;
+}) {
+  return (
+    <Card style={styles.breakdownCard}>
+      <Text style={styles.chartTitle}>KEY METRICS · NET INCOME</Text>
+      <Text style={styles.cardHint}>
+        Income {usd(data.income)} − Spending {usd(data.spend)} = {usd(data.net)}
+      </Text>
+      {comparison ? (
+        <Text style={styles.cardHint}>
+          Prior net {usd(data.prior.net)} · Δ {usd(data.net_delta)} (
+          {pct(data.net_delta_pct)})
+        </Text>
+      ) : null}
+      <Text style={styles.subSection}>Per month / period</Text>
+      {(data.series ?? []).map((s) => (
+        <View key={s.key} style={styles.periodRow}>
+          <Text style={styles.periodLabel}>{s.label}</Text>
+          <Text style={styles.periodAmt}>{usd(s.net)}</Text>
+        </View>
+      ))}
+    </Card>
+  );
+}
+
+function DetailPanel({
+  detail,
+  data,
+  comparison,
+}: {
+  detail: "income" | "spend" | "net" | null;
+  data: CashFlowRangePayload | null;
+  comparison: boolean;
+}) {
+  if (!data || !detail) {
+    return (
+      <View style={styles.detailEmpty}>
+        <Text style={styles.detailEmptyTitle}>Cash Flow detail</Text>
+        <Text style={styles.detailEmptyHint}>
+          Tap View More on Spending to open SPENDING BY CATEGORY and EXCLUDED
+          TRANSACTIONS. Ranges, comparison, and include-excluded stay active.
+        </Text>
+      </View>
+    );
+  }
+  if (detail === "spend") {
+    return <SpendingViewMore data={data} comparison={comparison} />;
+  }
+  if (detail === "income") {
+    return <IncomeViewMore data={data} />;
+  }
+  return <NetViewMore data={data} comparison={comparison} />;
+}
+
 export default function CashFlowScreen() {
+  const desktop = useIsDesktopWeb();
   const [range, setRange] = useState<CashFlowRangeKey>("mtd");
   const [comparison, setComparison] = useState(true);
   const [includeExcluded, setIncludeExcluded] = useState(false);
   const [detail, setDetail] = useState<"income" | "spend" | "net" | null>(null);
   const [data, setData] = useState<CashFlowRangePayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const detailAnchorRef = useRef<View>(null);
+
+  const openDetail = useCallback((next: "income" | "spend" | "net") => {
+    setDetail((cur) => (cur === next ? null : next));
+  }, []);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -336,6 +423,18 @@ export default function CashFlowScreen() {
     }, [reload]),
   );
 
+  // Stacked layout: keep View More above charts and scroll it into view.
+  useEffect(() => {
+    if (desktop || !detail) return;
+    const handle = setTimeout(() => {
+      const node = detailAnchorRef.current as unknown as {
+        scrollIntoView?: (opts?: ScrollIntoViewOptions) => void;
+      } | null;
+      node?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    }, 50);
+    return () => clearTimeout(handle);
+  }, [detail, desktop]);
+
   const series = useMemo(() => data?.series ?? [], [data]);
 
   const comparisonHint = useCallback(
@@ -347,8 +446,8 @@ export default function CashFlowScreen() {
     [comparison, data],
   );
 
-  return (
-    <Screen refreshing={loading} onRefresh={() => void reload()}>
+  const listBody = (
+    <>
       <ScreenHeader title="Cash Flow" />
 
       <Text style={styles.subtitle}>
@@ -385,7 +484,7 @@ export default function CashFlowScreen() {
               ? comparisonHint(data.income_delta, null, usd(data.prior.income))
               : undefined
           }
-          onPress={() => setDetail(detail === "income" ? null : "income")}
+          onPress={() => openDetail("income")}
         />
         <MetricCard
           label="Spending"
@@ -395,7 +494,7 @@ export default function CashFlowScreen() {
               ? comparisonHint(data.spend_delta, null, usd(data.prior.spend))
               : undefined
           }
-          onPress={() => setDetail(detail === "spend" ? null : "spend")}
+          onPress={() => openDetail("spend")}
         />
         <MetricCard
           label="Net income"
@@ -405,14 +504,25 @@ export default function CashFlowScreen() {
           }
           hint={
             comparison && data
-              ? comparisonHint(data.net_delta, data.net_delta_pct, usd(data.prior.net))
+              ? comparisonHint(
+                  data.net_delta,
+                  data.net_delta_pct,
+                  usd(data.prior.net),
+                )
               : !loading && !data
                 ? "Import or sync to see cash flow"
                 : undefined
           }
-          onPress={() => setDetail(detail === "net" ? null : "net")}
+          onPress={() => openDetail("net")}
         />
       </View>
+
+      {/* Stacked: detail under metrics so category + excluded are visible. */}
+      {!desktop && detail ? (
+        <View ref={detailAnchorRef} style={styles.inlineDetail}>
+          <DetailPanel detail={detail} data={data} comparison={comparison} />
+        </View>
+      ) : null}
 
       {series.length > 0 ? (
         <>
@@ -421,7 +531,7 @@ export default function CashFlowScreen() {
             series={series}
             showComparison={comparison}
             mode="income"
-            viewMore={() => setDetail(detail === "income" ? null : "income")}
+            viewMore={() => openDetail("income")}
             onBarPress={() => setDetail("income")}
           />
           <AreaChart
@@ -429,7 +539,7 @@ export default function CashFlowScreen() {
             series={series}
             showComparison={comparison}
             mode="spend"
-            viewMore={() => setDetail(detail === "spend" ? null : "spend")}
+            viewMore={() => openDetail("spend")}
             onBarPress={() => setDetail("spend")}
           />
           <AreaChart
@@ -437,7 +547,7 @@ export default function CashFlowScreen() {
             series={series}
             showComparison={comparison}
             mode="net"
-            viewMore={() => setDetail(detail === "net" ? null : "net")}
+            viewMore={() => openDetail("net")}
             onBarPress={() => setDetail("net")}
           />
         </>
@@ -451,56 +561,46 @@ export default function CashFlowScreen() {
         </Card>
       )}
 
-      {detail === "spend" && data ? (
-        <SpendingViewMore data={data} comparison={comparison} />
-      ) : null}
-
-      {detail === "income" && data ? (
-        <Card style={styles.breakdownCard}>
-          <Text style={styles.chartTitle}>Key Metrics · Income</Text>
-          <Text style={styles.cardHint}>
-            Total {usd(data.income)} · Prior range {usd(data.prior.income)} · Δ{" "}
-            {usd(data.income_delta)}
-          </Text>
-          <Text style={styles.subSection}>Per month / period</Text>
-          {(data.series ?? []).map((s) => (
-            <View key={s.key} style={styles.periodRow}>
-              <Text style={styles.periodLabel}>{s.label}</Text>
-              <Text style={styles.periodAmt}>{usd(s.income)}</Text>
-            </View>
-          ))}
-        </Card>
-      ) : null}
-
-      {detail === "net" && data ? (
-        <Card style={styles.breakdownCard}>
-          <Text style={styles.chartTitle}>Key Metrics · Net income</Text>
-          <Text style={styles.cardHint}>
-            Income {usd(data.income)} − Spending {usd(data.spend)} ={" "}
-            {usd(data.net)}
-          </Text>
-          {comparison ? (
-            <Text style={styles.cardHint}>
-              Prior net {usd(data.prior.net)} · Δ {usd(data.net_delta)} (
-              {pct(data.net_delta_pct)})
-            </Text>
-          ) : null}
-          <Text style={styles.subSection}>Per month / period</Text>
-          {(data.series ?? []).map((s) => (
-            <View key={s.key} style={styles.periodRow}>
-              <Text style={styles.periodLabel}>{s.label}</Text>
-              <Text style={styles.periodAmt}>{usd(s.net)}</Text>
-            </View>
-          ))}
-        </Card>
-      ) : null}
-
       <Text style={styles.rules}>
         Web Cash Flow is an intentional clone delta (Copilot ships Cash Flow on
         iOS/Mac only). Ranges match Help Center. Transfers omitted. Net income =
         Income − Spending. Bank CSV import remains under More → Import CSV
         (commit → needs_review).
       </Text>
+    </>
+  );
+
+  const detailBody = (
+    <ScrollView
+      style={styles.detailScroll}
+      contentContainerStyle={styles.detailPad}
+      keyboardShouldPersistTaps="handled"
+    >
+      <DetailPanel detail={detail} data={data} comparison={comparison} />
+    </ScrollView>
+  );
+
+  if (desktop) {
+    return (
+      <MasterDetail
+        list={
+          <Screen
+            flush
+            refreshing={loading}
+            onRefresh={() => void reload()}
+            contentStyle={styles.listPad}
+          >
+            {listBody}
+          </Screen>
+        }
+        detail={detailBody}
+      />
+    );
+  }
+
+  return (
+    <Screen refreshing={loading} onRefresh={() => void reload()}>
+      {listBody}
     </Screen>
   );
 }
@@ -646,4 +746,20 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   rules: { ...type.footnote, marginTop: spacing.sm, lineHeight: 16 },
+  listPad: { padding: spacing.lg, paddingBottom: spacing.xxxl },
+  inlineDetail: { marginBottom: spacing.sm },
+  detailScroll: { flex: 1, minHeight: 0 },
+  detailPad: { padding: spacing.lg, paddingBottom: spacing.xxxl },
+  detailEmpty: {
+    flex: 1,
+    padding: spacing.lg,
+    justifyContent: "center",
+    gap: spacing.sm,
+  },
+  detailEmptyTitle: { ...type.title3, color: colors.text },
+  detailEmptyHint: {
+    ...type.footnote,
+    color: colors.textTertiary,
+    lineHeight: 18,
+  },
 });
