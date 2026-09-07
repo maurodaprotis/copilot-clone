@@ -15,6 +15,7 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
     categories: new Map(),
     budget_months: new Map(),
     fx_rates: new Map(),
+    user_settings: new Map(),
   };
 
   function budgetKey(categoryId: string, yearMonth: string): string {
@@ -247,6 +248,26 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
       return { changes: 1 };
     }
 
+    if (
+      s.startsWith("INSERT INTO user_settings") ||
+      s.startsWith("INSERT OR IGNORE INTO user_settings") ||
+      s.startsWith("INSERT OR REPLACE INTO user_settings")
+    ) {
+      const id = String(p[0] ?? "default");
+      const row = {
+        id,
+        reporting_currency: String(p[1] ?? "USD"),
+        locale: String(p[2] ?? "en-US"),
+        timezone: String(p[3] ?? "America/Argentina/Salta"),
+        default_fx_series: String(p[4] ?? "parallel"),
+      };
+      if (s.startsWith("INSERT OR IGNORE") && tables.user_settings.has(id)) {
+        return { changes: 0 };
+      }
+      tables.user_settings.set(id, row);
+      return { changes: 1 };
+    }
+
     throw new Error(`memory db unsupported SQL: ${s}`);
   }
 
@@ -299,6 +320,14 @@ export function createMemoryDb(): LocalDb & { _tables: Record<string, Map<string
 
     if (s.includes("FROM fx_rates")) {
       return [...tables.fx_rates.values()] as T[];
+    }
+
+    if (s.includes("FROM user_settings")) {
+      let rows = [...tables.user_settings.values()];
+      if (s.includes("WHERE id") && p[0] != null) {
+        rows = rows.filter((r) => r.id === p[0]);
+      }
+      return rows as T[];
     }
 
     if (s.includes("FROM transactions")) {

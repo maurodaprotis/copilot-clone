@@ -10,7 +10,7 @@ import {
   pushFxToApi,
   pushSettingsToApi,
 } from "../src/offline/settingsImport";
-import { colors, radius, spacing, type } from "../src/theme";
+import { colors, radius, spacing, type, useTheme, type ThemeMode } from "../src/theme";
 import {
   Chip,
   ListRow,
@@ -64,7 +64,7 @@ export default function SettingsScreen() {
   const [rates, setRates] = useState<FxRate[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const [themeMode, setThemeMode] = useState("Auto");
+  const { preference: themeMode, setPreference: setThemeMode } = useTheme();
   const [budgetingOn, setBudgetingOn] = useState(true);
   const [rolloverOn, setRolloverOn] = useState(false);
   const [base, setBase] = useState("USD");
@@ -141,17 +141,28 @@ export default function SettingsScreen() {
   function clearLocalCache() {
     try {
       if (typeof localStorage !== "undefined") {
+        const keep = new Set([
+          "copilot-user-settings",
+          "copilot-theme-mode",
+          "copilot-user-id",
+        ]);
         const keys: string[] = [];
         for (let i = 0; i < localStorage.length; i++) {
           const k = localStorage.key(i);
-          if (k && (k.startsWith("copilot") || k.includes("outbox"))) keys.push(k);
+          if (
+            k &&
+            (k.startsWith("copilot") || k.includes("outbox")) &&
+            !keep.has(k)
+          ) {
+            keys.push(k);
+          }
         }
         for (const k of keys) localStorage.removeItem(k);
       }
     } catch {
       // ignore
     }
-    flash("Local cache cleared (stub)");
+    flash("Local cache cleared (settings/theme kept)");
   }
 
   const generalBody = (
@@ -191,7 +202,7 @@ export default function SettingsScreen() {
           <SegmentedControl
             options={["Light", "Auto", "Dark"]}
             value={themeMode}
-            onChange={setThemeMode}
+            onChange={(v) => setThemeMode(v as ThemeMode)}
             tone="light"
             style={{ flex: 0, minWidth: 168 }}
           />

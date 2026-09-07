@@ -33,6 +33,8 @@ import {
   type LocalTransaction,
 } from "../../src/offline/queries";
 import { sumPeriodMetrics } from "../../src/offline/periodMetrics";
+import { getSettingsLocal } from "../../src/offline/settingsImport";
+import { reportingCurrencyFromPrefs } from "../../src/offline/prefsStore";
 import { getAccountsOverview } from "../../src/offline/accounts";
 import {
   reviewTransaction,
@@ -209,6 +211,9 @@ export default function TransactionsScreen() {
   const [msg, setMsg] = useState<string | null>(null);
   const [showComposer, setShowComposer] = useState(false);
   const [filter, setFilter] = useState<TxnFilter>("All");
+  const [reportingCurrency, setReportingCurrency] = useState(
+    () => reportingCurrencyFromPrefs(DEMO_REPORTING_CURRENCY),
+  );
   const [query, setQuery] = useState("");
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
@@ -256,6 +261,14 @@ export default function TransactionsScreen() {
       setAccountNames(names);
       setAccountCurrencies(ccys);
       setAllTags(tags);
+      try {
+        const s = await getSettingsLocal();
+        setReportingCurrency(
+          (s.reporting_currency || DEMO_REPORTING_CURRENCY).toUpperCase(),
+        );
+      } catch {
+        setReportingCurrency(reportingCurrencyFromPrefs(DEMO_REPORTING_CURRENCY));
+      }
       // Refresh Dashboard monthly spending from API so tab focus sees fresh spent_mtd.
       try {
         const ym = new Date().toISOString().slice(0, 7);
@@ -362,7 +375,7 @@ export default function TransactionsScreen() {
         amount: n,
         currency: txnCcy,
         account_currency: accountCcy,
-        reporting_currency: DEMO_REPORTING_CURRENCY,
+        reporting_currency: reportingCurrency,
         note: note || null,
         rate_book: book,
         type: txnKind === "income" ? "income" : "regular",
@@ -377,7 +390,7 @@ export default function TransactionsScreen() {
       }
       const queuedHint = queued ? " · queued offline" : pushed ? " · synced" : "";
       setMsg(
-        `Added ${transactionId.slice(0, 8)}…${queuedHint} · ${money(reportingAmt, DEMO_REPORTING_CURRENCY)} reporting`,
+        `Added ${transactionId.slice(0, 8)}…${queuedHint} · ${money(reportingAmt, reportingCurrency)} reporting`,
       );
       setShowComposer(false);
       // Replace-from-API (not append) so metrics cannot double-count.
@@ -460,7 +473,7 @@ export default function TransactionsScreen() {
         amount: n,
         currency: (detail.currency || accountCcy).toUpperCase(),
         account_currency: accountCcy,
-        reporting_currency: DEMO_REPORTING_CURRENCY,
+        reporting_currency: reportingCurrency,
         note: detailName || null,
         posted_at: detail.posted_at,
         rate_book: seedRateBook(),
@@ -527,8 +540,8 @@ export default function TransactionsScreen() {
 
   /** Phase 1 metrics — dedupe by id; reporting USD only (never amount+reporting). */
   const periodMetrics = useMemo(
-    () => sumPeriodMetrics(filtered, DEMO_REPORTING_CURRENCY),
-    [filtered],
+    () => sumPeriodMetrics(filtered, reportingCurrency),
+    [filtered, reportingCurrency],
   );
 
   const rateBook = useMemo(() => seedRateBook(), []);
@@ -536,10 +549,10 @@ export default function TransactionsScreen() {
   const fxHint = useMemo(() => {
     const n = Number(amount);
     if (!Number.isFinite(n) || n <= 0) {
-      return `Reporting ${DEMO_REPORTING_CURRENCY} · rate ~${DEMO_USD_ARS_RATE} ARS/USD`;
+      return `Reporting ${reportingCurrency} · rate ~${DEMO_USD_ARS_RATE} ARS/USD`;
     }
     const ccy = currency.toUpperCase();
-    if (ccy === DEMO_REPORTING_CURRENCY) {
+    if (ccy === reportingCurrency) {
       const ars = fx_convert(
         n,
         ccy,
@@ -547,16 +560,16 @@ export default function TransactionsScreen() {
         new Date().toISOString().slice(0, 10),
         rateBook,
       );
-      return `≈ ${money(n, DEMO_REPORTING_CURRENCY)} reporting · ~${money(ars.amount, "ARS")} on Cash ARS`;
+      return `≈ ${money(n, reportingCurrency)} reporting · ~${money(ars.amount, "ARS")} on Cash ARS`;
     }
     const usd = fx_convert(
       n,
       ccy,
-      DEMO_REPORTING_CURRENCY,
+      reportingCurrency,
       new Date().toISOString().slice(0, 10),
       rateBook,
     );
-    return `≈ ${money(usd.amount, DEMO_REPORTING_CURRENCY)} reporting (rate_book)`;
+    return `≈ ${money(usd.amount, reportingCurrency)} reporting (rate_book)`;
   }, [amount, currency, rateBook]);
 
   function selectAmountCurrency(next: string) {

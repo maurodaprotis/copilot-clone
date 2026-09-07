@@ -689,25 +689,45 @@ export class UserDO extends DurableObject<Env> {
   private commitImport(jobId: string): { job: ImportJob; created: string[]; duplicates: string[] } {
     const job = this.getImportJob(jobId);
     if (!job) throw new Error("import job not found");
-    if (job.status !== "ready_review" && job.status !== "committed") throw new Error(`cannot commit job in status ${job.status}`);
+    if (job.status !== "ready_review" && job.status !== "committed" && job.status !== "mapping") {
+      throw new Error(`cannot commit job in status ${job.status}`);
+    }
     if (!job.account_id) throw new Error("import job missing account_id");
     const account = this.listAccounts().find((a) => a.id === job.account_id);
     if (!account) throw new Error("account not found");
     const settings = this.getSettings();
     const rateBook = this.loadRateBook();
-    const rows = this.listImportRows(jobId);
+    let rows = this.listImportRows(jobId);
+    // Self-heal: mapping preview existed client-side but rows were lost — re-apply.
+    if (rows.length === 0 && job.mapping_json) {
+      try {
+        const mapping = JSON.parse(job.mapping_json) as CsvColumnMapping;
+        this.applyImportMapping(jobId, mapping, job.account_id, job.currency);
+        rows = this.listImportRows(jobId);
+      } catch {
+        /* keep empty — will return 0 created */
+      }
+    }
     const created: string[] = [];
     const duplicates: string[] = [];
     for (const row of rows) {
       if (row.action === "skip" || row.amount == null || !row.row_date) continue;
+      // Already committed this row in a prior attempt — count as created, don't dup.
+      if (row.result_entity_id) {
+        const live = this.loadTxnDomainById(row.result_entity_id);
+        if (live) {
+          created.push(row.result_entity_id);
+          continue;
+        }
+      }
       const rowCcy = (row.currency ?? job.currency ?? account.currency).toUpperCase();
       const { amount, type, is_refund } = signedAmountToTxn(row.amount);
       const fp = row.fingerprint ?? importFingerprint({
         account_id: job.account_id, date: row.row_date, amount, description: row.name ?? "", currency: rowCcy,
       });
       const existing = this.findByFingerprint(fp);
-      if (existing || row.action === "duplicate") {
-        duplicates.push(existing ?? fp);
+      if (existing) {
+        duplicates.push(existing);
         this.ctx.storage.sql.exec(`UPDATE import_rows SET action = 'duplicate', result_entity_id = ? WHERE id = ?`, existing, row.id);
         continue;
       }

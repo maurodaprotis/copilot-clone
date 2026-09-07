@@ -5,6 +5,7 @@ import { listAllTransactions } from "../offline/queries";
 import { pullAccountsFromApi } from "./pullAccounts";
 import { pullCategoriesFromApi } from "./pullCategories";
 import { getApiUserId } from "./userId";
+import { pullSettingsFromApi } from "../offline/settingsImport";
 
 /**
  * On web mount: pull demo-user API into local mirrors and warm GETs so
@@ -20,6 +21,7 @@ export async function prefetchWebApiData(): Promise<void> {
   await Promise.allSettled([
     pullCategoriesFromApi({ userId }),
     pullAccountsFromApi({ userId }),
+    pullSettingsFromApi(),
     // Web listAllTransactions hits GET /transactions (Pages has no durable sqlite).
     listAllTransactions(),
     fetch(`${base}/dashboard/spending?month=${month}`, { headers }),

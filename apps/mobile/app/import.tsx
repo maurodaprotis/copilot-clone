@@ -119,11 +119,24 @@ export default function ImportScreen() {
     setBusy(true);
     setMsg(null);
     try {
-      const result = await commitImportJobApi(job.id);
+      const result = await commitImportJobApi(job.id, {
+        preview: preview as Array<{
+          row_date?: string | null;
+          name?: string | null;
+          amount?: number | null;
+          currency?: string | null;
+          action?: string;
+          fingerprint?: string | null;
+        }>,
+      });
       setJob(result.job);
       setMsg(
         `Committed · ${result.created.length} to review · ${result.duplicates.length} dups`,
       );
+      if (result.created.length > 0) {
+        // Land on Transactions so Starbucks / needs_review rows are visible.
+        router.push("/transactions" as never);
+      }
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally {
@@ -325,7 +338,7 @@ export default function ImportScreen() {
             }
             onPress={() => {
               if (job?.status === "committed") {
-                router.push("/");
+                router.push("/transactions" as never);
                 return;
               }
               if (preview.length) {

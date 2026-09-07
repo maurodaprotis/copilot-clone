@@ -9,7 +9,7 @@ import { ensureWebOutboxAutodrain } from "../src/offline/webOutbox";
 import { createApiTransport } from "../src/sync/apiTransport";
 import { prefetchWebApiData } from "../src/sync/prefetchWebData";
 import { getApiUserId } from "../src/sync/userId";
-import { colors, fontFamily } from "../src/theme";
+import { colors, fontFamily, ThemeProvider, useTheme } from "../src/theme";
 import { WebShell } from "../src/ui";
 
 const headerOpts = {
@@ -28,10 +28,12 @@ const headerOpts = {
   contentStyle: { backgroundColor: colors.bgPage },
 };
 
-export default function RootLayout() {
+function RootLayoutInner() {
+  const { colors: themeColors, resolved } = useTheme();
+
   useEffect(() => {
     if (Platform.OS === "web" && typeof document !== "undefined") {
-      document.body.style.backgroundColor = colors.bg;
+      document.body.style.backgroundColor = themeColors.bg;
       document.body.style.fontFamily =
         fontFamily ??
         "Inter, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
@@ -45,7 +47,9 @@ export default function RootLayout() {
         document.head.appendChild(link);
       }
     }
+  }, [themeColors.bg]);
 
+  useEffect(() => {
     const sub = Linking.addEventListener("url", ({ url }) => {
       void handleIncomingUrl(url).then((handled) => {
         if (handled) {
@@ -75,11 +79,22 @@ export default function RootLayout() {
     return () => sub.remove();
   }, []);
 
+  const themedHeader = {
+    ...headerOpts,
+    headerStyle: { backgroundColor: themeColors.bgPage },
+    headerTintColor: themeColors.primary,
+    headerTitleStyle: {
+      ...headerOpts.headerTitleStyle,
+      color: themeColors.text,
+    },
+    contentStyle: { backgroundColor: themeColors.bgPage },
+  };
+
   return (
     <>
-      <StatusBar style="dark" />
+      <StatusBar style={resolved === "Dark" ? "light" : "dark"} />
       <WebShell>
-        <Stack screenOptions={headerOpts}>
+        <Stack screenOptions={themedHeader}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="accounts" options={{ title: "Accounts" }} />
           <Stack.Screen name="investments" options={{ title: "Investments", headerShown: false }} />
@@ -100,5 +115,13 @@ export default function RootLayout() {
         </Stack>
       </WebShell>
     </>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <RootLayoutInner />
+    </ThemeProvider>
   );
 }
