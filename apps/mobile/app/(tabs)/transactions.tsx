@@ -9,7 +9,12 @@ import {
   View,
 } from "react-native";
 import { useFocusEffect } from "expo-router";
-import { SEED_CATEGORIES } from "@copilot-clone/domain";
+import {
+  DEMO_USD_ARS_RATE,
+  SEED_CATEGORIES,
+  fx_convert,
+  seedRateBook,
+} from "@copilot-clone/domain";
 import {
   DEMO_ACCOUNT_CURRENCY,
   DEMO_ACCOUNT_ID,
@@ -184,9 +189,11 @@ export default function TransactionsScreen() {
   const [loading, setLoading] = useState(true);
   const [all, setAll] = useState<LocalTransaction[]>([]);
   const [outboxCount, setOutboxCount] = useState(0);
-  const [amount, setAmount] = useState("50");
+  const [amount, setAmount] = useState("10");
   const [note, setNote] = useState("Café offline");
-  const [currency, setCurrency] = useState(DEMO_ACCOUNT_CURRENCY);
+  // Amount currency defaults to reporting USD so ~$10 visibly moves totals;
+  // account stays Cash ARS and FX converts via rate_book. ARS chip still available.
+  const [currency, setCurrency] = useState(DEMO_REPORTING_CURRENCY);
   const [categoryId, setCategoryId] = useState("cat-dining");
   const [txnKind, setTxnKind] = useState<"expense" | "income">("expense");
   const [catMeta, setCatMeta] = useState<Record<string, CatMeta>>(seedCatMeta);
@@ -334,6 +341,14 @@ export default function TransactionsScreen() {
       const accountCcy =
         accountCurrencies[DEMO_ACCOUNT_ID] || DEMO_ACCOUNT_CURRENCY;
       const txnCcy = (currency || accountCcy).toUpperCase();
+      const book = seedRateBook();
+      const reportingAmt = fx_convert(
+        n,
+        txnCcy,
+        DEMO_REPORTING_CURRENCY,
+        new Date().toISOString().slice(0, 10),
+        book,
+      ).amount;
       const { transactionId, queued } = await addExpenseOffline({
         account_id: DEMO_ACCOUNT_ID,
         // Persist selected category for income too (Salary/Interest) — never force cat-work.
@@ -343,14 +358,16 @@ export default function TransactionsScreen() {
         account_currency: accountCcy,
         reporting_currency: DEMO_REPORTING_CURRENCY,
         note: note || null,
-        rate_book: { "USD:ARS:2026-09-04": 1400 },
+        rate_book: book,
         type: txnKind === "income" ? "income" : "regular",
       });
       const result = await syncOutbox(createApiTransport()).catch(() => ({
         pushed: 0,
       }));
       const queuedHint = queued ? " · queued offline" : result.pushed ? " · synced" : "";
-      setMsg(`Added ${transactionId.slice(0, 8)}…${queuedHint}`);
+      setMsg(
+        `Added ${transactionId.slice(0, 8)}…${queuedHint} · ${money(reportingAmt, DEMO_REPORTING_CURRENCY)} reporting`,
+      );
       setShowComposer(false);
       await reload();
     } catch (e) {
@@ -433,7 +450,7 @@ export default function TransactionsScreen() {
         reporting_currency: DEMO_REPORTING_CURRENCY,
         note: detailName || null,
         posted_at: detail.posted_at,
-        rate_book: { "USD:ARS:2026-09-04": 1400 },
+        rate_book: seedRateBook(),
         type: detail.type === "income" ? "income" : "regular",
       });
       await syncOutbox(createApiTransport()).catch(() => ({ pushed: 0 }));
@@ -487,16 +504,20 @@ export default function TransactionsScreen() {
     return source.filter(matchesFilter);
   }, [all, pending, filter, query, catMeta]);
 
-  /** Phase 1 metrics strip — recomputed from API-backed list after every reload. */
+  /** Phase 1 metrics strip — always sum amount_reporting (USD). */
   const periodMetrics = useMemo(() => {
     let spent = 0;
     let income = 0;
     for (const txn of filtered) {
       if (txn.review_status === "excluded") continue;
-      const amt =
-        Number.isFinite(txn.amount_reporting) && txn.amount_reporting !== 0
-          ? txn.amount_reporting
-          : txn.amount;
+      // Reporting totals must never fall back to account-currency `amount`
+      // (e.g. 14000 ARS would look like $14,000). Prefer amount_reporting;
+      // only fall back when currency already is reporting.
+      const amt = Number.isFinite(txn.amount_reporting)
+        ? txn.amount_reporting
+        : txn.currency.toUpperCase() === DEMO_REPORTING_CURRENCY
+          ? txn.amount
+          : 0;
       if (txn.type === "income") income += amt;
       else if (txn.type === "transfer") continue;
       else if (txn.is_refund) spent -= amt;
@@ -509,6 +530,56 @@ export default function TransactionsScreen() {
       reporting: DEMO_REPORTING_CURRENCY,
     };
   }, [filtered]);
+
+  const rateBook = useMemo(() => seedRateBook(), []);
+
+  const fxHint = useMemo(() => {
+    const n = Number(amount);
+    if (!Number.isFinite(n) || n <= 0) {
+      return `Reporting ${DEMO_REPORTING_CURRENCY} · rate ~${DEMO_USD_ARS_RATE} ARS/USD`;
+    }
+    const ccy = currency.toUpperCase();
+    if (ccy === DEMO_REPORTING_CURRENCY) {
+      const ars = fx_convert(
+        n,
+        ccy,
+        "ARS",
+        new Date().toISOString().slice(0, 10),
+        rateBook,
+      );
+      return `≈ ${money(n, DEMO_REPORTING_CURRENCY)} reporting · ~${money(ars.amount, "ARS")} on Cash ARS`;
+    }
+    const usd = fx_convert(
+      n,
+      ccy,
+      DEMO_REPORTING_CURRENCY,
+      new Date().toISOString().slice(0, 10),
+      rateBook,
+    );
+    return `≈ ${money(usd.amount, DEMO_REPORTING_CURRENCY)} reporting (rate_book)`;
+  }, [amount, currency, rateBook]);
+
+  function selectAmountCurrency(next: string) {
+    const to = next.toUpperCase();
+    const from = currency.toUpperCase();
+    if (to === from) return;
+    const n = Number(amount);
+    if (Number.isFinite(n) && n > 0) {
+      const converted = fx_convert(
+        n,
+        from,
+        to,
+        new Date().toISOString().slice(0, 10),
+        rateBook,
+      );
+      if (converted.rate != null) {
+        const rounded =
+          to === "ARS" ? Math.round(converted.amount) : Math.round(converted.amount * 100) / 100;
+        setAmount(String(rounded));
+      }
+    }
+    setCurrency(to);
+  }
 
   const grouped = useMemo(() => {
     const map = new Map<string, LocalTransaction[]>();
@@ -778,9 +849,9 @@ export default function TransactionsScreen() {
               onPress={() => {
                 const next = !showComposer;
                 if (next) {
-                  setCurrency(
-                    accountCurrencies[DEMO_ACCOUNT_ID] || DEMO_ACCOUNT_CURRENCY,
-                  );
+                  // Reporting USD amount on Cash ARS — FX fills amount_account.
+                  setCurrency(DEMO_REPORTING_CURRENCY);
+                  setAmount("10");
                 }
                 setShowComposer(next);
               }}
@@ -814,7 +885,10 @@ export default function TransactionsScreen() {
               }}
             />
           </View>
-          <Text style={styles.label}>Amount</Text>
+          <Text style={styles.label}>
+            Amount ({currency.toUpperCase()}) · account{" "}
+            {accountCurrencies[DEMO_ACCOUNT_ID] || DEMO_ACCOUNT_CURRENCY}
+          </Text>
           <TextInput
             style={styles.input}
             value={amount}
@@ -823,9 +897,11 @@ export default function TransactionsScreen() {
             placeholder="0.00"
             placeholderTextColor={colors.textTertiary}
           />
-          <Text style={styles.label}>Currency</Text>
+          <Text style={styles.fxHint}>{fxHint}</Text>
+          <Text style={styles.label}>Amount currency</Text>
           <View style={styles.chipRow}>
             {[
+              DEMO_REPORTING_CURRENCY,
               accountCurrencies[DEMO_ACCOUNT_ID] || DEMO_ACCOUNT_CURRENCY,
               "USD",
               "ARS",
@@ -836,7 +912,7 @@ export default function TransactionsScreen() {
                   key={ccy}
                   label={ccy}
                   selected={currency.toUpperCase() === ccy}
-                  onPress={() => setCurrency(ccy)}
+                  onPress={() => selectAmountCurrency(ccy)}
                 />
               ))}
           </View>
@@ -1015,6 +1091,12 @@ const styles = StyleSheet.create({
   composer: { marginBottom: spacing.md },
   composerTitle: { ...type.headline, marginBottom: spacing.sm },
   label: { ...type.footnote, fontWeight: "600", marginBottom: 6, marginTop: 4 },
+  fxHint: {
+    ...type.footnote,
+    color: colors.textTertiary,
+    marginTop: -4,
+    marginBottom: spacing.sm,
+  },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,

@@ -173,3 +173,48 @@ describe("income category persist", () => {
     });
   });
 });
+
+describe("FX reporting amounts (Cash ARS)", () => {
+  it("ARS 14000 reports as ~10 USD; USD 10 on ARS account reports 10", async () => {
+    const { deriveAmounts, seedRateBook } = await import("@copilot-clone/domain");
+    const book = seedRateBook(new Date("2026-09-06T12:00:00.000Z"));
+    const ars = deriveAmounts({
+      amount: 14000,
+      currency: "ARS",
+      account_currency: "ARS",
+      reporting_currency: "USD",
+      on_date: "2026-09-06",
+      rate_book: book,
+    });
+    expect(ars.amount_reporting).toBeCloseTo(10, 5);
+    expect(ars.amount_account).toBe(14000);
+
+    const usd = deriveAmounts({
+      amount: 10,
+      currency: "USD",
+      account_currency: "ARS",
+      reporting_currency: "USD",
+      on_date: "2026-09-06",
+      rate_book: book,
+    });
+    expect(usd.amount_reporting).toBe(10);
+    expect(usd.amount_account).toBe(14000);
+  });
+
+  it("mapApiTxn keeps amount_reporting for metrics (no ARS-as-USD fallback)", async () => {
+    const { __test } = await import("../src/offline/queries");
+    const mapped = __test.mapApiTxn({
+      id: "t1",
+      account_id: "acc-cash-ars",
+      amount: 14000,
+      currency: "ARS",
+      amount_account: 14000,
+      amount_reporting: 10,
+      type: "regular",
+      review_status: "reviewed",
+      posted_at: "2026-09-06T12:00:00.000Z",
+    });
+    expect(mapped.amount_reporting).toBe(10);
+    expect(mapped.amount).toBe(14000);
+  });
+});
