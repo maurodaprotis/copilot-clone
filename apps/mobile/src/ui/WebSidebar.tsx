@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { usePathname, useRouter } from "expo-router";
-import { colors, fontFamily, layout, radius, spacing, type } from "../theme";
+import { fontFamily, layout, radius, spacing, useTheme } from "../theme";
 
 type NavItem = {
   label: string;
@@ -68,14 +68,23 @@ const NAV: NavItem[] = [
 export function WebSidebar() {
   const router = useRouter();
   const pathname = usePathname() || "/";
+  const { colors } = useTheme();
 
   return (
-    <View style={styles.rail}>
+    <View
+      style={[
+        styles.rail,
+        {
+          backgroundColor: colors.bgElevated,
+          borderRightColor: colors.borderSubtle,
+        },
+      ]}
+    >
       <View style={styles.brand}>
-        <View style={styles.logoMark}>
-          <Text style={styles.logoGlyph}>✈</Text>
+        <View style={[styles.logoMark, { backgroundColor: colors.accentBlueSoft }]}>
+          <Text style={[styles.logoGlyph, { color: colors.accentBlue }]}>✈</Text>
         </View>
-        <Text style={styles.brandTitle}>copilot</Text>
+        <Text style={[styles.brandTitle, { color: colors.textPrimary }]}>copilot</Text>
       </View>
 
       <View style={styles.nav}>
@@ -85,12 +94,26 @@ export function WebSidebar() {
             <Pressable
               key={item.href}
               onPress={() => router.push(item.href as never)}
-              style={[styles.item, active && styles.itemActive]}
+              style={[
+                styles.item,
+                active && { backgroundColor: colors.bgSidebarActive },
+              ]}
             >
-              <Text style={[styles.itemGlyph, active && styles.itemGlyphActive]}>
+              <Text
+                style={[
+                  styles.itemGlyph,
+                  { color: active ? colors.accentBlue : colors.textTertiary },
+                  active && { fontWeight: "700" },
+                ]}
+              >
                 {item.glyph}
               </Text>
-              <Text style={[styles.itemLabel, active && styles.itemLabelActive]}>
+              <Text
+                style={[
+                  styles.itemLabel,
+                  { color: active ? colors.accentBlue : colors.textSecondary },
+                ]}
+              >
                 {item.label}
               </Text>
             </Pressable>
@@ -104,9 +127,7 @@ export function WebSidebar() {
 const styles = StyleSheet.create({
   rail: {
     width: layout.sidebarWidth,
-    backgroundColor: colors.bgElevated,
     borderRightWidth: StyleSheet.hairlineWidth,
-    borderRightColor: colors.borderSubtle,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xl,
     paddingHorizontal: spacing.sm,
@@ -122,12 +143,10 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 8,
-    backgroundColor: colors.accentBlueSoft,
     alignItems: "center",
     justifyContent: "center",
   },
   logoGlyph: {
-    color: colors.accentBlue,
     fontSize: 13,
     fontWeight: "700",
     transform: [{ rotate: "-28deg" }],
@@ -135,7 +154,6 @@ const styles = StyleSheet.create({
   brandTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: colors.textPrimary,
     fontFamily,
     letterSpacing: -0.4,
     lineHeight: 22,
@@ -149,20 +167,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: radius.md,
   },
-  itemActive: {
-    backgroundColor: colors.bgSidebarActive,
-  },
   itemGlyph: {
     width: 22,
     textAlign: "center",
     fontSize: 16,
-    color: colors.textTertiary,
   },
-  itemGlyphActive: { color: colors.accentBlue, fontWeight: "700" },
   itemLabel: {
-    ...type.callout,
-    color: colors.textSecondary,
+    fontSize: 14,
     fontWeight: "600",
+    fontFamily,
   },
-  itemLabelActive: { color: colors.accentBlue },
 });

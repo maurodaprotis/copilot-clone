@@ -7,7 +7,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { colors, layout, spacing } from "../theme";
+import { layout, spacing, useTheme } from "../theme";
 import { useIsDesktopWeb } from "./useIsDesktopWeb";
 
 type Props = {
@@ -29,6 +29,7 @@ export function Screen({
   flush = false,
 }: Props) {
   const desktop = useIsDesktopWeb();
+  const { colors } = useTheme();
   const pad = [
     styles.pad,
     desktop && !flush && styles.padWeb,
@@ -37,11 +38,15 @@ export function Screen({
   ];
 
   if (!scroll) {
-    return <View style={[styles.root, ...pad, styles.fill]}>{children}</View>;
+    return (
+      <View style={[styles.root, { backgroundColor: colors.bgPage }, ...pad, styles.fill]}>
+        {children}
+      </View>
+    );
   }
   return (
     <ScrollView
-      style={styles.root}
+      style={[styles.root, { backgroundColor: colors.bgPage }]}
       contentContainerStyle={[...pad, styles.content, desktop && !flush && styles.contentWeb]}
       keyboardShouldPersistTaps="handled"
       refreshControl={
@@ -60,7 +65,7 @@ export function Screen({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bgPage },
+  root: { flex: 1 },
   pad: {
     paddingHorizontal: layout.screenPadding,
     paddingTop: spacing.sm,

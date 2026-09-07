@@ -1,9 +1,12 @@
 import type {
   CsvColumnMapping, FxRate, FxSeries, ImportJob, UserSettings,
 } from "@copilot-clone/domain";
-import { defaultUserSettings, normalizeFxSeries } from "@copilot-clone/domain";
+import { defaultUserSettings, normalizeFxSeries, signedAmountToTxn } from "@copilot-clone/domain";
 import { API_URL, getApiUserId } from "../config";
+import { isWebRuntime } from "../db/runtime";
 import type { LocalDb } from "../db/types";
+import { readSettingsPrefs, writeSettingsPrefs } from "./prefsStore";
+import { postSyncItems } from "./webSyncWrite";
 
 async function dbOr(dbOverride?: LocalDb): Promise<LocalDb> {
   return dbOverride ?? (await (await import("../db/client")).getDb());
@@ -15,69 +18,95 @@ function headers(): HeadersInit {
 }
 
 export async function getSettingsLocal(dbOverride?: LocalDb): Promise<UserSettings> {
-  const db = await dbOr(dbOverride);
-  const row = await db.getFirstAsync<{
-    id: string; reporting_currency: string; locale: string; timezone: string; default_fx_series: string;
-  }>("SELECT * FROM user_settings WHERE id = 'default' LIMIT 1");
-  if (!row) return defaultUserSettings();
-  return {
-    id: row.id, reporting_currency: row.reporting_currency, locale: row.locale,
-    timezone: row.timezone, default_fx_series: normalizeFxSeries(row.default_fx_series),
-  };
+  if (!dbOverride && isWebRuntime()) {
+    const cached = readSettingsPrefs();
+    if (cached) return cached;
+  }
+  try {
+    const db = await dbOr(dbOverride);
+    const row = await db.getFirstAsync<{
+      id: string; reporting_currency: string; locale: string; timezone: string; default_fx_series: string;
+    }>("SELECT * FROM user_settings WHERE id = 'default' LIMIT 1");
+    if (!row) return defaultUserSettings();
+    return {
+      id: row.id, reporting_currency: row.reporting_currency, locale: row.locale,
+      timezone: row.timezone, default_fx_series: normalizeFxSeries(row.default_fx_series),
+    };
+  } catch {
+    return readSettingsPrefs() ?? defaultUserSettings();
+  }
 }
 
 export async function saveSettingsLocal(patch: Partial<UserSettings>, dbOverride?: LocalDb): Promise<UserSettings> {
-  const db = await dbOr(dbOverride);
-  const current = await getSettingsLocal(db);
+  const current = await getSettingsLocal(dbOverride);
   const next = {
     ...current, ...patch,
     reporting_currency: (patch.reporting_currency ?? current.reporting_currency).toUpperCase(),
     default_fx_series: normalizeFxSeries(patch.default_fx_series ?? current.default_fx_series),
   };
-  await db.runAsync(
-    `INSERT INTO user_settings (id, reporting_currency, locale, timezone, default_fx_series)
-     VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET
-       reporting_currency = excluded.reporting_currency,
-       locale = excluded.locale, timezone = excluded.timezone,
-       default_fx_series = excluded.default_fx_series`,
-    next.id, next.reporting_currency, next.locale, next.timezone, next.default_fx_series,
-  );
+  writeSettingsPrefs(next);
+  if (!dbOverride && isWebRuntime()) {
+    return next;
+  }
+  try {
+    const db = await dbOr(dbOverride);
+    await db.runAsync(
+      `INSERT INTO user_settings (id, reporting_currency, locale, timezone, default_fx_series)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         reporting_currency = excluded.reporting_currency,
+         locale = excluded.locale, timezone = excluded.timezone,
+         default_fx_series = excluded.default_fx_series`,
+      next.id, next.reporting_currency, next.locale, next.timezone, next.default_fx_series,
+    );
+  } catch {
+    /* memory db may lack user_settings — prefs already written */
+  }
   return next;
 }
 
 export async function pullSettingsFromApi(): Promise<UserSettings | null> {
   try {
-    const res = await fetch(`${base()}/settings`, { headers: headers() });
-    if (!res.ok) return null;
+    const res = await fetch(`${base()}/settings`, { headers: headers(), cache: "no-store" });
+    if (!res.ok) return readSettingsPrefs();
     const data = (await res.json()) as { settings: UserSettings };
     await saveSettingsLocal(data.settings);
     return data.settings;
-  } catch { return null; }
+  } catch {
+    return readSettingsPrefs();
+  }
 }
 
 export async function pushSettingsToApi(patch: Partial<UserSettings>): Promise<UserSettings> {
   const local = await saveSettingsLocal(patch);
   try {
-    const res = await fetch(`${base()}/settings`, { method: "POST", headers: headers(), body: JSON.stringify(local) });
+    const res = await fetch(`${base()}/settings`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify(local),
+    });
     if (res.ok) {
       const data = (await res.json()) as { settings: UserSettings };
       await saveSettingsLocal(data.settings);
       return data.settings;
     }
-  } catch { /* offline */ }
+  } catch { /* offline — localStorage still has prefs */ }
   return local;
 }
 
 export async function listFxLocal(dbOverride?: LocalDb): Promise<FxRate[]> {
   const db = await dbOr(dbOverride);
-  const rows = await db.getAllAsync<{
-    from_currency: string; to_currency: string; on_date: string; rate: number; rate_book: string; source: string;
-  }>("SELECT * FROM fx_rates ORDER BY on_date DESC");
-  return rows.map((r) => ({
-    from: r.from_currency, to: r.to_currency, on_date: r.on_date, rate: Number(r.rate),
-    rate_book: normalizeFxSeries(r.rate_book), source: (r.source || "manual") as FxRate["source"],
-  }));
+  try {
+    const rows = await db.getAllAsync<{
+      from_currency: string; to_currency: string; on_date: string; rate: number; rate_book: string; source: string;
+    }>("SELECT * FROM fx_rates ORDER BY on_date DESC");
+    return rows.map((r) => ({
+      from: r.from_currency, to: r.to_currency, on_date: r.on_date, rate: Number(r.rate),
+      rate_book: normalizeFxSeries(r.rate_book), source: (r.source || "manual") as FxRate["source"],
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function upsertFxLocal(input: {
@@ -129,10 +158,97 @@ export async function mapImportJobApi(jobId: string, body: {
   return (await res.json()) as { job: ImportJob; rows: unknown[]; preview: unknown[] };
 }
 
-export async function commitImportJobApi(jobId: string): Promise<{ job: ImportJob; created: string[]; duplicates: string[] }> {
-  const res = await fetch(`${base()}/imports/${jobId}/commit`, { method: "POST", headers: headers(), body: "{}" });
+type PreviewRow = {
+  row_date?: string | null;
+  name?: string | null;
+  amount?: number | null;
+  currency?: string | null;
+  action?: string;
+  fingerprint?: string | null;
+};
+
+/** Upsert preview rows via POST /sync when Worker commit created none (or partial). */
+async function syncFallbackCreate(
+  job: ImportJob,
+  preview: PreviewRow[],
+  alreadyCreated: string[],
+): Promise<string[]> {
+  const settings = await getSettingsLocal();
+  const accountId = job.account_id;
+  if (!accountId) return alreadyCreated;
+
+  const live = await fetch(`${base()}/transactions`, {
+    headers: headers(),
+    cache: "no-store",
+  })
+    .then(async (r) => (r.ok ? ((await r.json()) as { transactions?: Array<{ fingerprint?: string | null }> }) : null))
+    .catch(() => null);
+  const liveFp = new Set(
+    (live?.transactions ?? [])
+      .map((t) => t.fingerprint)
+      .filter((f): f is string => !!f),
+  );
+
+  const items: Array<Record<string, unknown>> = [];
+  for (const row of preview) {
+    if (row.action === "skip") continue;
+    if (row.amount == null || !row.row_date) continue;
+    // Skip only when fingerprint is still live (true duplicate).
+    if (row.fingerprint && liveFp.has(row.fingerprint)) continue;
+    const signed = Number(row.amount);
+    const { amount, type, is_refund } = signedAmountToTxn(signed);
+    const id = crypto.randomUUID();
+    const rowCcy = (row.currency ?? job.currency ?? "USD").toUpperCase();
+    items.push({
+      op: "upsert",
+      id,
+      account_id: accountId,
+      amount,
+      currency: rowCcy,
+      type,
+      is_refund,
+      review_status: "needs_review",
+      posted_at: `${row.row_date}T12:00:00.000Z`,
+      note: row.name ?? null,
+      txn_name: row.name ?? null,
+      fingerprint: row.fingerprint ?? null,
+      reporting_currency: settings.reporting_currency,
+    });
+  }
+  if (!items.length) return alreadyCreated;
+
+  const result = await postSyncItems(items, { apiUrl: base(), userId: getApiUserId() });
+  if (!result.ok) {
+    throw new Error(result.error || "import sync fallback failed");
+  }
+  return [...alreadyCreated, ...(result.saved ?? items.map((i) => String(i.id)))];
+}
+
+export async function commitImportJobApi(
+  jobId: string,
+  opts?: { preview?: PreviewRow[] },
+): Promise<{ job: ImportJob; created: string[]; duplicates: string[] }> {
+  const res = await fetch(`${base()}/imports/${jobId}/commit`, {
+    method: "POST",
+    headers: headers(),
+    body: "{}",
+  });
   if (!res.ok) throw new Error((await res.text()) || `commit failed: ${res.status}`);
-  return (await res.json()) as { job: ImportJob; created: string[]; duplicates: string[] };
+  const data = (await res.json()) as {
+    job: ImportJob;
+    created: string[];
+    duplicates: string[];
+  };
+  let created = data.created ?? [];
+  const duplicates = data.duplicates ?? [];
+  const preview = opts?.preview ?? [];
+  const pendingCreates = preview.filter(
+    (r) => r.action !== "skip" && r.amount != null && r.row_date,
+  );
+  if (created.length === 0 && pendingCreates.length > 0) {
+    created = await syncFallbackCreate(data.job, pendingCreates, created);
+  }
+  return { job: data.job, created, duplicates };
 }
 
 export async function undoImportJobApi(jobId: string): Promise<ImportJob> {
