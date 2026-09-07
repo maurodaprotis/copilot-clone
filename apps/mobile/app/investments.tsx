@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import {
   INVESTMENT_RANGE_KEYS,
@@ -262,7 +262,7 @@ function AccountDetail({
           <Toggle value={hidden} onChange={setHidden} />
         </View>
         <View style={styles.gearRow}>
-          <Text style={styles.gearLabel}>Closed</Text>
+          <Text style={styles.gearLabel}>Mark as closed</Text>
           <Toggle value={closed} onChange={setClosed} />
         </View>
         <Pressable style={styles.deleteBtn}>
@@ -283,6 +283,11 @@ function HoldingDetail({
   onSort: (s: HoldingSort) => void;
 }) {
   const up = holding.day_change_pct >= 0;
+  const [holdRange, setHoldRange] = useState<InvestmentRangeKey>("1D");
+  const qtyLabel =
+    Number.isInteger(holding.quantity) || Math.abs(holding.quantity - Math.round(holding.quantity)) < 1e-9
+      ? String(Math.round(holding.quantity))
+      : String(holding.quantity);
   return (
     <Screen scroll flush contentStyle={{ padding: spacing.md }}>
       <Text style={styles.detailTitle}>
@@ -300,11 +305,18 @@ function HoldingDetail({
       >
         {pct(holding.day_change_pct)} today
       </Text>
+      <SegmentedControl
+        options={[...INVESTMENT_RANGE_KEYS]}
+        value={holdRange}
+        onChange={(v) => setHoldRange(v as InvestmentRangeKey)}
+        style={{ marginTop: spacing.md }}
+      />
+      <Sparkline values={holding.sparkline} positive={up} />
       <Card style={{ marginTop: spacing.md }}>
         <Text style={styles.chartTitle}>Positions</Text>
         <View style={styles.gearRow}>
           <Text style={styles.gearLabel}>Quantity</Text>
-          <Text style={styles.gearValue}>{holding.quantity}</Text>
+          <Text style={styles.gearValue}>{qtyLabel} shares</Text>
         </View>
         <View style={styles.gearRow}>
           <Text style={styles.gearLabel}>My equity</Text>
@@ -341,6 +353,14 @@ export default function InvestmentsScreen() {
   const [openMovers, setOpenMovers] = useState(true);
   const [sel, setSel] = useState<DetailSel>(null);
   const [holdSort, setHoldSort] = useState<HoldingSort>("last_price");
+
+  const selectHolding = useCallback((id: string) => {
+    setSel({ kind: "holding", id });
+  }, []);
+
+  const selectAccount = useCallback((id: string) => {
+    setSel({ kind: "account", id });
+  }, []);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -408,7 +428,7 @@ export default function InvestmentsScreen() {
               <MoverCard
                 key={h.id}
                 h={h}
-                onPress={() => setSel({ kind: "holding", id: h.id })}
+                onPress={() => selectHolding(h.id)}
               />
             ))}
           </View>
@@ -423,7 +443,7 @@ export default function InvestmentsScreen() {
             <Pressable
               key={a.id}
               style={styles.accountRow}
-              onPress={() => setSel({ kind: "account", id: a.id })}
+              onPress={() => selectAccount(a.id)}
             >
               <View style={{ flex: 1 }}>
                 <Text style={styles.catName}>{a.name}</Text>
@@ -475,27 +495,39 @@ export default function InvestmentsScreen() {
               </Pressable>
             ))}
           </View>
-          {holdingsSorted.map((h) => (
-            <Pressable
-              key={h.id}
-              style={styles.holdingRow}
-              onPress={() => setSel({ kind: "holding", id: h.id })}
-            >
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.catName}>
-                  {h.symbol}{" "}
-                  <Text style={styles.cardHint}>{h.type}</Text>
-                </Text>
-                <Text style={styles.cardHint} numberOfLines={1}>
-                  {h.name} · qty {h.quantity}
-                </Text>
-              </View>
-              <View style={{ alignItems: "flex-end" }}>
-                <Text style={styles.catAmt}>{usdExact(h.last_price)}</Text>
-                <Text style={styles.cardHint}>{usd(h.my_equity)}</Text>
-              </View>
-            </Pressable>
-          ))}
+          {holdingsSorted.map((h) => {
+            const selected = sel?.kind === "holding" && sel.id === h.id;
+            return (
+              <Pressable
+                key={h.id}
+                testID={`holding-row-${h.symbol}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Holding ${h.symbol}`}
+                accessibilityState={{ selected }}
+                onPress={() => selectHolding(h.id)}
+                style={({ pressed }) => [
+                  styles.holdingRow,
+                  selected && styles.holdingRowSelected,
+                  pressed && styles.holdingRowPressed,
+                  Platform.OS === "web" ? ({ cursor: "pointer" } as object) : null,
+                ]}
+              >
+                <View style={{ flex: 1, minWidth: 0 }} pointerEvents="none">
+                  <Text style={styles.catName}>
+                    {h.symbol}{" "}
+                    <Text style={styles.cardHint}>{h.type}</Text>
+                  </Text>
+                  <Text style={styles.cardHint} numberOfLines={1}>
+                    {h.name} · qty {h.quantity}
+                  </Text>
+                </View>
+                <View style={{ alignItems: "flex-end" }} pointerEvents="none">
+                  <Text style={styles.catAmt}>{usdExact(h.last_price)}</Text>
+                  <Text style={styles.cardHint}>{usd(h.my_equity)}</Text>
+                </View>
+              </Pressable>
+            );
+          })}
         </Accordion>
 
         <Text style={styles.footnote}>
@@ -507,9 +539,14 @@ export default function InvestmentsScreen() {
   );
 
   const detail = selectedAccount ? (
-    <AccountDetail account={selectedAccount} />
+    <AccountDetail key={selectedAccount.id} account={selectedAccount} />
   ) : selectedHolding ? (
-    <HoldingDetail holding={selectedHolding} sort={holdSort} onSort={setHoldSort} />
+    <HoldingDetail
+      key={selectedHolding.id}
+      holding={selectedHolding}
+      sort={holdSort}
+      onSort={setHoldSort}
+    />
   ) : (
     <View style={styles.detailEmpty}>
       <EmptyState icon="▤" title="Select to view details" />
@@ -634,9 +671,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm,
     paddingVertical: 10,
+    paddingHorizontal: 4,
+    marginHorizontal: -4,
+    borderRadius: radius.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
+  holdingRowSelected: {
+    backgroundColor: colors.accentBlueSoft,
+    borderBottomColor: "transparent",
+  },
+  holdingRowPressed: { opacity: 0.88 },
   sortBar: { flexDirection: "row", gap: 8, marginBottom: spacing.sm, flexWrap: "wrap" },
   sortChip: {
     paddingHorizontal: 10,

@@ -3,9 +3,10 @@
  * Demo Brokerage + VTI/AAPL skin; Worker can serve this payload as-is.
  */
 
-export type InvestmentRangeKey = "1W" | "1M" | "3M" | "YTD" | "1Y" | "ALL";
+export type InvestmentRangeKey = "1D" | "1W" | "1M" | "3M" | "YTD" | "1Y" | "ALL";
 
 export const INVESTMENT_RANGE_KEYS: InvestmentRangeKey[] = [
+  "1D",
   "1W",
   "1M",
   "3M",
@@ -85,17 +86,19 @@ function spark(seed: number, n = 12, drift = 0): number[] {
 
 function chartForRange(range: InvestmentRangeKey, endValue: number): InvestmentChartPoint[] {
   const days =
-    range === "1W"
-      ? 7
-      : range === "1M"
-        ? 30
-        : range === "3M"
-          ? 90
-          : range === "YTD"
-            ? 248
-            : range === "1Y"
-              ? 365
-              : 520;
+    range === "1D"
+      ? 1
+      : range === "1W"
+        ? 7
+        : range === "1M"
+          ? 30
+          : range === "3M"
+            ? 90
+            : range === "YTD"
+              ? 248
+              : range === "1Y"
+                ? 365
+                : 520;
   const now = new Date();
   const points: InvestmentChartPoint[] = [];
   // Flat-ish history with a slight rise into live estimate (matches Copilot demo skin).
@@ -120,12 +123,12 @@ export function buildDemoInvestmentsPayload(
 ): InvestmentsPayload {
   const vtiPrice = 289.42;
   const aaplPrice = 227.15;
-  // Target Copilot demo live balance ≈ $5,397 (70% ETF / 30% Equity).
+  // Target Copilot demo live balance ≈ $5,397. AAPL fixed at 5 shares (QA smoke).
   const live = 5397;
-  const vtiEquity = Math.round(live * 0.7 * 100) / 100;
-  const aaplEquity = Math.round((live - vtiEquity) * 100) / 100;
+  const aaplQty = 5;
+  const aaplEquity = Math.round(aaplQty * aaplPrice * 100) / 100;
+  const vtiEquity = Math.round((live - aaplEquity) * 100) / 100;
   const vtiQty = Math.round((vtiEquity / vtiPrice) * 10000) / 10000;
-  const aaplQty = Math.round((aaplEquity / aaplPrice) * 10000) / 10000;
 
   const holdings: InvestmentHolding[] = [
     {
@@ -168,16 +171,18 @@ export function buildDemoInvestmentsPayload(
     },
   ];
 
+  const equityPct = Math.round((aaplEquity / live) * 100);
+  const etfPct = 100 - equityPct;
   const allocation: InvestmentAllocationSlice[] = [
     {
       type: "ETF",
-      percent: 70,
-      amount: Math.round(live * 0.7 * 100) / 100,
+      percent: etfPct,
+      amount: vtiEquity,
     },
     {
       type: "Equity",
-      percent: 30,
-      amount: Math.round(live * 0.3 * 100) / 100,
+      percent: equityPct,
+      amount: aaplEquity,
     },
   ];
 
