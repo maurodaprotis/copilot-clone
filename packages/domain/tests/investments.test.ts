@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildDemoInvestmentsPayload } from "../src/investments";
+import {
+  INVESTMENT_RANGE_KEYS,
+  buildDemoInvestmentsPayload,
+} from "../src/investments";
 
 describe("buildDemoInvestmentsPayload", () => {
   it("returns Copilot-web-like demo without Goals", () => {
@@ -15,5 +18,14 @@ describe("buildDemoInvestmentsPayload", () => {
     expect(p.goals).toEqual([]);
     expect(p.chart_settings.benchmark).toBe("None");
     expect(p.chart_settings.live_balance).toBe(true);
+    const aapl = p.holdings.find((h) => h.symbol === "AAPL");
+    expect(aapl?.type).toBe("Equity");
+    expect(aapl?.quantity).toBe(5);
+  });
+
+  it("includes 1D in investment range keys", () => {
+    expect(INVESTMENT_RANGE_KEYS[0]).toBe("1D");
+    expect(buildDemoInvestmentsPayload("1D").range).toBe("1D");
+    expect(buildDemoInvestmentsPayload("1D").chart.length).toBeGreaterThan(1);
   });
 });
