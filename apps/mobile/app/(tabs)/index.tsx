@@ -75,7 +75,7 @@ async function fetchSpendingLine(yearMonth: string): Promise<SpendLine> {
   try {
     const res = await fetch(
       `${API_URL.replace(/\/$/, "")}/dashboard/spending?month=${encodeURIComponent(yearMonth)}`,
-      { headers: { "x-user-id": getApiUserId() } },
+      { headers: { "x-user-id": getApiUserId() }, cache: "no-store" },
     );
     if (res.ok) {
       const json = (await res.json()) as SpendLine;

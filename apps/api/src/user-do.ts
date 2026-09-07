@@ -68,6 +68,7 @@ export interface Env {
 type SyncPushItem = {
   op?:
     | "upsert"
+    | "delete"
     | "review"
     | "budget_upsert"
     | "account_upsert"
@@ -929,6 +930,31 @@ export class UserDO extends DurableObject<Env> {
     return item.id!;
   }
 
+  /** Soft-delete a transaction and reverse its balance delta. */
+  private applyDelete(item: SyncPushItem): string {
+    const id = item.id;
+    if (!id) throw new ClientError("delete_invalid", "delete requires id");
+    const before = this.loadTxnDomainById(id);
+    if (!before) return id;
+    // Already soft-deleted?
+    const live = [
+      ...this.ctx.storage.sql.exec(
+        `SELECT deleted_at FROM transactions WHERE id = ? LIMIT 1`,
+        id,
+      ),
+    ];
+    if (live.length && live[0]!.deleted_at != null) return id;
+    const now = item.updated_at ?? new Date().toISOString();
+    this.ctx.storage.sql.exec(
+      `UPDATE transactions SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`,
+      now,
+      now,
+      id,
+    );
+    this.applyAccountBalanceDelta(before.account_id, -balanceDeltaForTxn(before));
+    return id;
+  }
+
   private applyBudgetUpsert(item: SyncPushItem): string {
     const categoryId = item.category_id;
     const yearMonth = item.year_month ?? currentYearMonth();
@@ -1015,7 +1041,10 @@ export class UserDO extends DurableObject<Env> {
       transfer_pair_id: item.transfer_pair_id ?? null,
       fingerprint: item.fingerprint ?? null,
     };
-    categoryId = applyNameRuleToTransaction(draft, this.listNameRules()).category_id;
+    // Name rules fill category only when caller left it unset (manual picks stick).
+    if (categoryId == null) {
+      categoryId = applyNameRuleToTransaction(draft, this.listNameRules()).category_id;
+    }
     const before = this.loadTxnDomainById(id);
     const createdAt = before ? String(
       [...this.ctx.storage.sql.exec(`SELECT created_at FROM transactions WHERE id = ?`, id)][0]
@@ -1682,6 +1711,10 @@ export class UserDO extends DurableObject<Env> {
           }
           if (item.op === "recurring_upsert") {
             saved.push(this.applyRecurringUpsert(item));
+            continue;
+          }
+          if (item.op === "delete") {
+            saved.push(this.applyDelete(item));
             continue;
           }
           // Default / explicit upsert — must always push a saved id when item is valid.

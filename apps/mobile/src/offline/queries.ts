@@ -67,6 +67,7 @@ async function fetchTransactionsFromApi(options?: {
   try {
     const res = await fetchImpl(`${apiUrl.replace(/\/$/, "")}/transactions`, {
       headers: { "x-user-id": userId },
+      cache: "no-store",
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { transactions?: Record<string, unknown>[] };

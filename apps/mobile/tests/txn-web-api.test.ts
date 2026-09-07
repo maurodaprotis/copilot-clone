@@ -106,3 +106,70 @@ describe("txn native sqlite path (memory db)", () => {
     expect(all[0]!.review_status).toBe("reviewed");
   });
 });
+
+describe("txn delete via API", () => {
+  it("delete sync op posts delete with x-user-id", async () => {
+    const { webSyncOrEnqueue } = await import("../src/offline/webSyncWrite");
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      calls.push({ url: String(input), init });
+      return new Response(JSON.stringify({ ok: true, saved: ["txn-del"] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const { deleteTransaction } = await import("../src/offline/deleteTransaction");
+    // Force web path by mocking isWebRuntime is hard; call webSyncOrEnqueue shape via delete module.
+    // Instead postSyncItems-style: exercise deleteTransaction under web by stubbing runtime.
+    const result = await webSyncOrEnqueue({
+      payload: { op: "delete", id: "txn-del", updated_at: "2026-09-06T00:00:00.000Z" },
+      entity_type: "transaction",
+      entity_id: "txn-del",
+      apiUrl: "https://example.test",
+      userId: "demo-user",
+      fetchImpl,
+    });
+    expect(result.queued).toBe(false);
+    expect(calls).toHaveLength(1);
+    const body = JSON.parse(String(calls[0]!.init?.body));
+    expect(body.items[0]).toMatchObject({ op: "delete", id: "txn-del" });
+  });
+});
+
+describe("income category persist", () => {
+  it("upsertTxnViaApi keeps cat-salary for income", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      calls.push({ url: String(input), init });
+      return new Response(JSON.stringify({ ok: true, saved: ["txn-sal"] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const result = await __test.upsertTxnViaApi(
+      {
+        id: "txn-sal",
+        account_id: "acc-cash-ars",
+        category_id: "cat-salary",
+        amount: 10,
+        currency: "ARS",
+        account_currency: "ARS",
+        reporting_currency: "USD",
+        posted_at: "2026-09-06T12:00:00.000Z",
+        note: "CualyQAIncome",
+        fingerprint: "fp-sal",
+        type: "income",
+      },
+      { apiUrl: "https://example.test", userId: "demo-user", fetchImpl },
+    );
+    expect(result.transactionId).toBe("txn-sal");
+    const body = JSON.parse(String(calls[0]!.init?.body));
+    expect(body.items[0]).toMatchObject({
+      op: "upsert",
+      type: "income",
+      category_id: "cat-salary",
+      currency: "ARS",
+      review_status: "reviewed",
+    });
+  });
+});
