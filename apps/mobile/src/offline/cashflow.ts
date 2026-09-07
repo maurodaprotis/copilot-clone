@@ -35,7 +35,7 @@ async function loadTxns(dbOverride?: LocalDb): Promise<Transaction[]> {
   const rows = await db.getAllAsync<LocalTransaction>(
     "SELECT * FROM transactions",
   );
-  return rows.map(toDomainTxn);
+  return rows.filter((r) => !(r as { deleted_at?: string | null }).deleted_at).map(toDomainTxn);
 }
 
 export async function getCashFlowOverview(

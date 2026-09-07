@@ -80,6 +80,11 @@ export function enqueueWebOutbox(input: {
   entity_id: string;
   payload: unknown;
 }): WebOutboxItem {
+  // Replace any pending row for the same entity — avoid double-apply on drain.
+  const without = readAll().filter(
+    (r) =>
+      !(r.entity_type === input.entity_type && r.entity_id === input.entity_id),
+  );
   const item: WebOutboxItem = {
     id: input.id ?? crypto.randomUUID(),
     entity_type: input.entity_type,
@@ -89,9 +94,8 @@ export function enqueueWebOutbox(input: {
     attempts: 0,
     last_error: null,
   };
-  const all = readAll();
-  all.push(item);
-  writeAll(all);
+  without.push(item);
+  writeAll(without);
   return item;
 }
 
@@ -101,6 +105,18 @@ export function removeWebOutboxIds(ids: string[]): void {
   writeAll(readAll().filter((r) => !drop.has(r.id)));
 }
 
+/** Drop queued rows for an entity after a successful direct POST /sync. */
+export function removeWebOutboxForEntity(
+  entity_type: string,
+  entity_id: string,
+): void {
+  writeAll(
+    readAll().filter(
+      (r) => !(r.entity_type === entity_type && r.entity_id === entity_id),
+    ),
+  );
+}
+
 export type WebDrainTransport = (
   items: unknown[],
 ) => Promise<{ ok: boolean; saved?: string[] }>;
@@ -108,12 +124,24 @@ export type WebDrainTransport = (
 /**
  * Push all pending web-outbox payloads via transport (POST /sync).
  * On success removes rows; on failure bumps attempts.
+ * Dedupes by entity_type+entity_id (keep latest) before push.
  */
 export async function drainWebOutbox(
   transport: WebDrainTransport,
 ): Promise<{ pushed: number }> {
-  const rows = listWebOutbox();
-  if (rows.length === 0) return { pushed: 0 };
+  const rawRows = listWebOutbox();
+  if (rawRows.length === 0) return { pushed: 0 };
+
+  const byEntity = new Map<string, WebOutboxItem>();
+  for (const row of rawRows) {
+    byEntity.set(`${row.entity_type}:${row.entity_id}`, row);
+  }
+  const rows = [...byEntity.values()].sort((a, b) =>
+    a.created_at.localeCompare(b.created_at),
+  );
+  if (rows.length !== rawRows.length) {
+    writeAll(rows);
+  }
 
   const items = rows.map((r) => r.payload);
   let result: { ok: boolean; saved?: string[] };

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -29,8 +29,10 @@ import {
   countOutbox,
   listAllTransactions,
   listToReview,
+  replaceTransactionsById,
   type LocalTransaction,
 } from "../../src/offline/queries";
+import { sumPeriodMetrics } from "../../src/offline/periodMetrics";
 import { getAccountsOverview } from "../../src/offline/accounts";
 import {
   reviewTransaction,
@@ -202,6 +204,8 @@ export default function TransactionsScreen() {
     [DEMO_ACCOUNT_ID]: DEMO_ACCOUNT_CURRENCY,
   });
   const [busy, setBusy] = useState(false);
+  /** Sync re-entry guard — React setState is async; blocks double Add/Delete. */
+  const busyRef = useRef(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [showComposer, setShowComposer] = useState(false);
   const [filter, setFilter] = useState<TxnFilter>("All");
@@ -231,8 +235,8 @@ export default function TransactionsScreen() {
         fetchCategoryMetaFromApi(),
         getAccountsOverview().catch(() => null),
       ]);
-      setPending(p);
-      setAll(a);
+      setPending(replaceTransactionsById([], p));
+      setAll(replaceTransactionsById([], a));
       setOutboxCount(o);
       setCatMeta(apiCats && Object.keys(apiCats).length ? apiCats : seedCatMeta());
       const names: Record<string, string> = {};
@@ -330,6 +334,8 @@ export default function TransactionsScreen() {
   }
 
   async function onAddOffline() {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setMsg(null);
     try {
@@ -361,18 +367,25 @@ export default function TransactionsScreen() {
         rate_book: book,
         type: txnKind === "income" ? "income" : "regular",
       });
-      const result = await syncOutbox(createApiTransport()).catch(() => ({
-        pushed: 0,
-      }));
-      const queuedHint = queued ? " · queued offline" : result.pushed ? " · synced" : "";
+      // Only drain outbox when the write was queued — avoid re-POST races.
+      let pushed = 0;
+      if (queued) {
+        const result = await syncOutbox(createApiTransport()).catch(() => ({
+          pushed: 0,
+        }));
+        pushed = result.pushed;
+      }
+      const queuedHint = queued ? " · queued offline" : pushed ? " · synced" : "";
       setMsg(
         `Added ${transactionId.slice(0, 8)}…${queuedHint} · ${money(reportingAmt, DEMO_REPORTING_CURRENCY)} reporting`,
       );
       setShowComposer(false);
+      // Replace-from-API (not append) so metrics cannot double-count.
       await reload();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
@@ -471,19 +484,27 @@ export default function TransactionsScreen() {
 
   async function onDeleteDetail() {
     if (!detail) return;
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setMsg(null);
     setShowDetailMore(false);
     try {
       const id = detail.id;
-      await deleteTransaction(id);
-      await syncOutbox(createApiTransport()).catch(() => ({ pushed: 0 }));
+      const del = await deleteTransaction(id);
+      // Drop from local lists immediately (replace-by-id), then refetch.
+      setAll((prev) => prev.filter((t) => t.id !== id));
+      setPending((prev) => prev.filter((t) => t.id !== id));
       setDetail(null);
+      if (del.queued) {
+        await syncOutbox(createApiTransport()).catch(() => ({ pushed: 0 }));
+      }
       setMsg("Deleted");
       await reload();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
@@ -504,32 +525,11 @@ export default function TransactionsScreen() {
     return source.filter(matchesFilter);
   }, [all, pending, filter, query, catMeta]);
 
-  /** Phase 1 metrics strip — always sum amount_reporting (USD). */
-  const periodMetrics = useMemo(() => {
-    let spent = 0;
-    let income = 0;
-    for (const txn of filtered) {
-      if (txn.review_status === "excluded") continue;
-      // Reporting totals must never fall back to account-currency `amount`
-      // (e.g. 14000 ARS would look like $14,000). Prefer amount_reporting;
-      // only fall back when currency already is reporting.
-      const amt = Number.isFinite(txn.amount_reporting)
-        ? txn.amount_reporting
-        : txn.currency.toUpperCase() === DEMO_REPORTING_CURRENCY
-          ? txn.amount
-          : 0;
-      if (txn.type === "income") income += amt;
-      else if (txn.type === "transfer") continue;
-      else if (txn.is_refund) spent -= amt;
-      else spent += amt;
-    }
-    return {
-      spent,
-      income,
-      net: income - spent,
-      reporting: DEMO_REPORTING_CURRENCY,
-    };
-  }, [filtered]);
+  /** Phase 1 metrics — dedupe by id; reporting USD only (never amount+reporting). */
+  const periodMetrics = useMemo(
+    () => sumPeriodMetrics(filtered, DEMO_REPORTING_CURRENCY),
+    [filtered],
+  );
 
   const rateBook = useMemo(() => seedRateBook(), []);
 
