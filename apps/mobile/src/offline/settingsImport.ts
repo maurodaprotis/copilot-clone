@@ -245,7 +245,7 @@ export async function commitImportJobApi(
   const pendingCreates = preview.filter(
     (r) => r.action !== "skip" && r.amount != null && r.row_date,
   );
-  if (created.length === 0 && pendingCreates.length > 0) {
+  if (pendingCreates.length > 0 && created.length < pendingCreates.length) {
     created = await syncFallbackCreate(data.job, pendingCreates, created);
   }
   return { job: data.job, created, duplicates };
