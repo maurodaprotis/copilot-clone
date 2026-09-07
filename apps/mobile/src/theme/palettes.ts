@@ -78,10 +78,21 @@ export const darkPalette: ColorPalette = {
 
 export type ThemeMode = "Light" | "Auto" | "Dark";
 
+/**
+ * Dark remains in ThemeMode / ThemeProvider plumbing, but is not a selectable
+ * product feature until cards/modals/tables have real dark theming.
+ * Half-dark is worse than Light — do not treat Dark as PASS.
+ */
+export const DARK_THEME_AVAILABLE = false;
+
 export function resolveThemeMode(
   preference: ThemeMode,
   systemDark: boolean,
 ): "Light" | "Dark" {
+  if (!DARK_THEME_AVAILABLE) {
+    // Light-first: keep Light; Auto only when it would resolve to light.
+    return "Light";
+  }
   if (preference === "Light") return "Light";
   if (preference === "Dark") return "Dark";
   return systemDark ? "Dark" : "Light";

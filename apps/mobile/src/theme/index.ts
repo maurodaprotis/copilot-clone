@@ -13,6 +13,7 @@ export {
   lightPalette,
   darkPalette,
   paletteFor,
+  DARK_THEME_AVAILABLE,
   resolveThemeMode,
   type ThemeMode,
   type ColorPalette,
