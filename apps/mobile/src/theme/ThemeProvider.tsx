@@ -11,6 +11,7 @@ import { Appearance, Platform } from "react-native";
 import { colors as lightColors, type as lightType } from "./tokens";
 import {
   buildType,
+  DARK_THEME_AVAILABLE,
   darkThemeCss,
   paletteFor,
   resolveThemeMode,
@@ -30,11 +31,21 @@ type ThemeContextValue = {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
+function normalizePreference(mode: ThemeMode): ThemeMode {
+  // Soft-block Dark until full theming; migrate any saved Dark → Light.
+  if (!DARK_THEME_AVAILABLE && mode === "Dark") return "Light";
+  return mode;
+}
+
 function readStoredPreference(): ThemeMode {
   try {
     if (typeof localStorage !== "undefined") {
       const raw = localStorage.getItem(THEME_KEY);
-      if (raw === "Light" || raw === "Auto" || raw === "Dark") return raw;
+      if (raw === "Light" || raw === "Auto" || raw === "Dark") {
+        const normalized = normalizePreference(raw);
+        if (normalized !== raw) persistPreference(normalized);
+        return normalized;
+      }
     }
   } catch {
     /* ignore */
@@ -86,8 +97,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setPreference = useCallback((mode: ThemeMode) => {
-    setPreferenceState(mode);
-    persistPreference(mode);
+    const next = normalizePreference(mode);
+    setPreferenceState(next);
+    persistPreference(next);
   }, []);
 
   const resolved = resolveThemeMode(preference, systemDark);

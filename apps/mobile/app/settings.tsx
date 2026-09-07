@@ -197,14 +197,17 @@ export default function SettingsScreen() {
         <View style={styles.row}>
           <View style={styles.rowText}>
             <Text style={styles.rowLabel}>Theme</Text>
-            <Text style={styles.rowDesc}>Customize how Copilot looks</Text>
+            <Text style={styles.rowDesc}>
+              Light (and Auto when it resolves to light). Dark coming soon —
+              unavailable until full dark theming.
+            </Text>
           </View>
           <SegmentedControl
-            options={["Light", "Auto", "Dark"]}
-            value={themeMode}
+            options={["Light", "Auto"]}
+            value={themeMode === "Dark" ? "Light" : themeMode}
             onChange={(v) => setThemeMode(v as ThemeMode)}
             tone="light"
-            style={{ flex: 0, minWidth: 168 }}
+            style={{ flex: 0, minWidth: 120 }}
           />
         </View>
       </SettingsGroup>
