@@ -38,11 +38,13 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     minWidth: 0,
     minHeight: 0,
+    // Clip paint but keep list above detail for hit-testing (2nd+ holdings rows).
     overflow: "hidden",
     borderRightWidth: StyleSheet.hairlineWidth,
     borderRightColor: colors.borderSubtle,
     backgroundColor: colors.bgPage,
-    zIndex: 1,
+    zIndex: 2,
+    elevation: 2,
   },
   detail: {
     flex: 1,
@@ -50,7 +52,7 @@ const styles = StyleSheet.create({
     minHeight: 0,
     overflow: "hidden",
     backgroundColor: colors.bgElevated,
-    zIndex: 1,
-    elevation: 1,
+    zIndex: 0,
+    elevation: 0,
   },
 });

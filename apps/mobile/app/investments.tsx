@@ -348,7 +348,7 @@ export default function InvestmentsScreen() {
   const [loading, setLoading] = useState(true);
   const [gearOpen, setGearOpen] = useState(false);
   const [openAcc, setOpenAcc] = useState(true);
-  const [openAlloc, setOpenAlloc] = useState(true);
+  const [openAlloc, setOpenAlloc] = useState(false);
   const [openHold, setOpenHold] = useState(true);
   const [openMovers, setOpenMovers] = useState(true);
   const [sel, setSel] = useState<DetailSel>(null);
@@ -457,25 +457,6 @@ export default function InvestmentsScreen() {
         </Accordion>
 
         <Accordion
-          title="Allocation"
-          open={openAlloc}
-          onToggle={() => setOpenAlloc((v) => !v)}
-          right="BY PERCENTAGE"
-        >
-          {(data?.allocation ?? []).map((slice) => (
-            <View key={slice.type} style={styles.allocRow}>
-              <View style={styles.catLabelRow}>
-                <Text style={styles.catName}>{slice.type}</Text>
-                <Text style={styles.catAmt}>
-                  {slice.percent}% · {usd(slice.amount)}
-                </Text>
-              </View>
-              <ProgressBar progress={slice.percent / 100} color={colors.accentBlue} />
-            </View>
-          ))}
-        </Accordion>
-
-        <Accordion
           title="Holdings"
           open={openHold}
           onToggle={() => setOpenHold((v) => !v)}
@@ -497,38 +478,67 @@ export default function InvestmentsScreen() {
           </View>
           {holdingsSorted.map((h) => {
             const selected = sel?.kind === "holding" && sel.id === h.id;
+            const select = () => selectHolding(h.id);
             return (
               <Pressable
                 key={h.id}
-                testID={`holding-row-${h.symbol}`}
+                testID={`holdings-row-${h.symbol}`}
                 accessibilityRole="button"
                 accessibilityLabel={`Holding ${h.symbol}`}
                 accessibilityState={{ selected }}
-                onPress={() => selectHolding(h.id)}
+                onPress={select}
+                onPressIn={select}
+                hitSlop={8}
                 style={({ pressed }) => [
                   styles.holdingRow,
                   selected && styles.holdingRowSelected,
                   pressed && styles.holdingRowPressed,
-                  Platform.OS === "web" ? ({ cursor: "pointer" } as object) : null,
+                  Platform.OS === "web" ? ({ cursor: "pointer", userSelect: "none" } as object) : null,
                 ]}
               >
-                <View style={{ flex: 1, minWidth: 0 }} pointerEvents="none">
+                {/* pointerEvents none: child Text must not steal web hits (esp. 2nd+ rows). */}
+                <View style={styles.holdingRowMain} pointerEvents="none">
                   <Text style={styles.catName}>
                     {h.symbol}{" "}
-                    <Text style={styles.cardHint}>{h.type}</Text>
+                    <Text style={styles.cardHint}>
+                      {h.type}
+                    </Text>
                   </Text>
                   <Text style={styles.cardHint} numberOfLines={1}>
                     {h.name} · qty {h.quantity}
                   </Text>
                 </View>
-                <View style={{ alignItems: "flex-end" }} pointerEvents="none">
-                  <Text style={styles.catAmt}>{usdExact(h.last_price)}</Text>
-                  <Text style={styles.cardHint}>{usd(h.my_equity)}</Text>
+                <View style={styles.holdingRowMeta} pointerEvents="none">
+                  <Text style={styles.catAmt}>
+                    {usdExact(h.last_price)}
+                  </Text>
+                  <Text style={styles.cardHint}>
+                    {usd(h.my_equity)}
+                  </Text>
                 </View>
               </Pressable>
             );
           })}
         </Accordion>
+        <Accordion
+          title="Allocation"
+          open={openAlloc}
+          onToggle={() => setOpenAlloc((v) => !v)}
+          right="BY PERCENTAGE"
+        >
+          {(data?.allocation ?? []).map((slice) => (
+            <View key={slice.type} style={styles.allocRow}>
+              <View style={styles.catLabelRow}>
+                <Text style={styles.catName}>{slice.type}</Text>
+                <Text style={styles.catAmt}>
+                  {slice.percent}% · {usd(slice.amount)}
+                </Text>
+              </View>
+              <ProgressBar progress={slice.percent / 100} color={colors.accentBlue} />
+            </View>
+          ))}
+        </Accordion>
+
 
         <Text style={styles.footnote}>
           Manual Demo Brokerage (no Plaid). Copilot web Investments — no Goals /
@@ -621,7 +631,7 @@ const styles = StyleSheet.create({
   },
   gearLabel: { ...type.callout, fontWeight: "600" },
   gearValue: { ...type.callout, color: colors.textSecondary },
-  accCard: { marginBottom: spacing.sm, overflow: "hidden" },
+  accCard: { marginBottom: spacing.sm, overflow: "visible" },
   accHead: {
     flexDirection: "row",
     alignItems: "center",
@@ -669,14 +679,21 @@ const styles = StyleSheet.create({
   holdingRow: {
     flexDirection: "row",
     alignItems: "center",
+    alignSelf: "stretch",
+    width: "100%",
     gap: spacing.sm,
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-    marginHorizontal: -4,
+    minHeight: 56,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    marginHorizontal: -10,
     borderRadius: radius.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
+    // Ensure full-row hit target on web (avoid text-only clicks).
+    zIndex: 2,
   },
+  holdingRowMain: { flex: 1, minWidth: 0 },
+  holdingRowMeta: { alignItems: "flex-end", flexShrink: 0 },
   holdingRowSelected: {
     backgroundColor: colors.accentBlueSoft,
     borderBottomColor: "transparent",
