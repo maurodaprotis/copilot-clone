@@ -1,7 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { StyleSheet, Text, TextInput, View } from "react-native";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
 import type { CsvColumnMapping, ImportJob } from "@copilot-clone/domain";
+import {
+  applyCsvMapping,
+  fingerprintMappedRow,
+  parseCsvText,
+} from "@copilot-clone/domain";
 import { DEMO_ACCOUNT_CURRENCY, DEMO_ACCOUNT_ID } from "../src/config";
 import { listLocalAccounts } from "../src/offline/accounts";
 import {
@@ -29,29 +34,82 @@ const SAMPLE = `date,description,amount
 
 type Step = 1 | 2 | 3 | 4;
 
+type PreviewRow = {
+  row_date?: string | null;
+  name?: string | null;
+  amount?: number | null;
+  currency?: string | null;
+  action?: string;
+  fingerprint?: string | null;
+};
+
+function buildLocalPreview(
+  csvText: string,
+  mapping: CsvColumnMapping,
+  accountId: string,
+  currency: string,
+): PreviewRow[] {
+  const table = parseCsvText(csvText);
+  const mapped = applyCsvMapping(table, mapping);
+  return mapped.map((m) => {
+    const rowCcy = (m.currency ?? currency).toUpperCase();
+    const fp = fingerprintMappedRow({
+      account_id: accountId,
+      date: m.date,
+      amount: Math.abs(m.amount),
+      description: m.description,
+      currency: rowCcy,
+    });
+    return {
+      row_date: m.date,
+      name: m.description,
+      amount: m.amount,
+      currency: rowCcy,
+      action: "create_txn" as const,
+      fingerprint: fp,
+    };
+  });
+}
+
+function normalizePreview(rows: unknown[] | undefined | null): PreviewRow[] {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((r) => {
+    const row = r as PreviewRow;
+    return {
+      row_date: row.row_date ?? null,
+      name: row.name ?? null,
+      amount: row.amount == null ? null : Number(row.amount),
+      currency: row.currency ?? null,
+      action: row.action,
+      fingerprint: row.fingerprint ?? null,
+    };
+  });
+}
+
 export default function ImportScreen() {
   const router = useRouter();
   const desktop = useIsDesktopWeb();
   const [csv, setCsv] = useState(SAMPLE);
+  const [uploadedCsv, setUploadedCsv] = useState<string | null>(null);
   const [accountId, setAccountId] = useState(DEMO_ACCOUNT_ID);
   const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [mapping, setMapping] = useState<CsvColumnMapping | null>(null);
   const [job, setJob] = useState<ImportJob | null>(null);
-  const [preview, setPreview] = useState<
-    Array<{
-      row_date?: string | null;
-      name?: string | null;
-      amount?: number | null;
-      action?: string;
-    }>
-  >([]);
+  const [preview, setPreview] = useState<PreviewRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  const canImport =
+    preview.length > 0 &&
+    !!job &&
+    (job.status === "ready_review" ||
+      job.status === "mapping" ||
+      job.status === "committed");
+
   const step: Step = useMemo(() => {
     if (job?.status === "committed") return 4;
-    if (preview.length > 0) return 4;
+    if (preview.length > 0 || job?.status === "ready_review") return 4;
     if (mapping) return 2;
     return 1;
   }, [job, mapping, preview.length]);
@@ -72,6 +130,37 @@ export default function ImportScreen() {
     }, [accountId]),
   );
 
+  async function ensureJobSynced(activeMapping: CsvColumnMapping): Promise<{
+    job: ImportJob;
+    mapping: CsvColumnMapping;
+  }> {
+    if (job && uploadedCsv === csv) {
+      return { job, mapping: activeMapping };
+    }
+    const result = await createImportJobApi({
+      csv_text: csv,
+      account_id: accountId,
+      currency: DEMO_ACCOUNT_CURRENCY,
+      file_name: "paste.csv",
+    });
+    setJob(result.job);
+    setHeaders(result.headers);
+    setUploadedCsv(csv);
+    // Prefer caller's mapping when columns still exist; else suggested.
+    const headerSet = new Set(result.headers);
+    const keep =
+      activeMapping.date &&
+      headerSet.has(activeMapping.date) &&
+      activeMapping.description &&
+      headerSet.has(activeMapping.description) &&
+      ((activeMapping.amount && headerSet.has(activeMapping.amount)) ||
+        activeMapping.debit ||
+        activeMapping.credit);
+    const nextMapping = keep ? activeMapping : result.suggested_mapping;
+    setMapping(nextMapping);
+    return { job: result.job, mapping: nextMapping };
+  }
+
   async function onUpload() {
     setBusy(true);
     setMsg(null);
@@ -85,8 +174,9 @@ export default function ImportScreen() {
       setJob(result.job);
       setHeaders(result.headers);
       setMapping(result.suggested_mapping);
+      setUploadedCsv(csv);
       setPreview([]);
-      setMsg(`Parsed · ${result.headers.length} columns`);
+      setMsg(`Parsed · ${result.headers.length} columns · ${result.job.row_count} rows`);
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally {
@@ -95,47 +185,110 @@ export default function ImportScreen() {
   }
 
   async function onMap() {
-    if (!job || !mapping) return;
+    if (!mapping) return;
     setBusy(true);
     setMsg(null);
     try {
-      const result = await mapImportJobApi(job.id, {
-        mapping,
+      const synced = await ensureJobSynced(mapping);
+      const local = buildLocalPreview(
+        csv,
+        synced.mapping,
+        accountId,
+        DEMO_ACCOUNT_CURRENCY,
+      );
+      const result = await mapImportJobApi(synced.job.id, {
+        mapping: synced.mapping,
         account_id: accountId,
         currency: DEMO_ACCOUNT_CURRENCY,
       });
       setJob(result.job);
-      setPreview((result.preview as typeof preview) ?? []);
-      setMsg(`Ready · ${result.job.row_count} rows`);
+      const apiPreview = normalizePreview(
+        (result.preview as unknown[]) ??
+          (result.rows as unknown[]) ??
+          [],
+      );
+      const nextPreview = apiPreview.length > 0 ? apiPreview : local;
+      setPreview(nextPreview);
+      if (nextPreview.length === 0) {
+        setMsg(
+          "Mapping matched 0 rows — check Date / Amount / Description columns.",
+        );
+      } else {
+        setMsg(`Ready · ${nextPreview.length} rows — click Import to commit`);
+      }
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : String(e));
+      // Still show local preview so UX isn't empty when Worker map fails.
+      try {
+        const local = buildLocalPreview(
+          csv,
+          mapping,
+          accountId,
+          DEMO_ACCOUNT_CURRENCY,
+        );
+        if (local.length) {
+          setPreview(local);
+          setMsg(
+            `Preview ready · ${local.length} rows (offline) — ${e instanceof Error ? e.message : String(e)}`,
+          );
+        } else {
+          setMsg(e instanceof Error ? e.message : String(e));
+        }
+      } catch {
+        setMsg(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setBusy(false);
     }
   }
 
   async function onCommit() {
-    if (!job) return;
+    if (!mapping) return;
     setBusy(true);
     setMsg(null);
     try {
-      const result = await commitImportJobApi(job.id, {
-        preview: preview as Array<{
-          row_date?: string | null;
-          name?: string | null;
-          amount?: number | null;
-          currency?: string | null;
-          action?: string;
-          fingerprint?: string | null;
-        }>,
+      // Ensure Worker has the same pasted CSV before commit.
+      const synced = await ensureJobSynced(mapping);
+      let rows = preview;
+      if (!rows.length || uploadedCsv !== csv) {
+        rows = buildLocalPreview(
+          csv,
+          synced.mapping,
+          accountId,
+          DEMO_ACCOUNT_CURRENCY,
+        );
+        setPreview(rows);
+      }
+      if (!rows.length) {
+        setMsg("Nothing to import — apply mapping with matching columns first.");
+        return;
+      }
+      // Re-map so import_rows exist on Worker for this CSV.
+      const mapped = await mapImportJobApi(synced.job.id, {
+        mapping: synced.mapping,
+        account_id: accountId,
+        currency: DEMO_ACCOUNT_CURRENCY,
+      });
+      setJob(mapped.job);
+      const apiPreview = normalizePreview(
+        (mapped.preview as unknown[]) ?? (mapped.rows as unknown[]) ?? [],
+      );
+      if (apiPreview.length > 0) {
+        rows = apiPreview;
+        setPreview(apiPreview);
+      }
+      const result = await commitImportJobApi(mapped.job.id, {
+        preview: rows,
       });
       setJob(result.job);
       setMsg(
         `Committed · ${result.created.length} to review · ${result.duplicates.length} dups`,
       );
       if (result.created.length > 0) {
-        // Land on Transactions so Starbucks / needs_review rows are visible.
         router.push("/transactions" as never);
+      } else {
+        setMsg(
+          `Import finished with 0 created (${result.duplicates.length} dups). Try unique merchant names.`,
+        );
       }
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
@@ -167,13 +320,22 @@ export default function ImportScreen() {
   const accountName =
     accounts.find((a) => a.id === accountId)?.name ?? "Cash ARS";
 
+  const primaryLabel =
+    job?.status === "committed"
+      ? "Open To Review"
+      : canImport || preview.length > 0
+        ? "Import"
+        : mapping
+          ? "Apply mapping"
+          : "Parse CSV";
+
   return (
     <>
       <Stack.Screen options={{ title: "Import", headerShown: !desktop }} />
       <Screen>
         <ScreenHeader
           title="Import CSV"
-          subtitle="Map columns, pick an account, preview rows — then import into USD reporting (ARS ok)."
+          subtitle="Paste CSV → Apply mapping → Preview rows → Import (needs_review)."
         />
 
         <View style={styles.steps}>
@@ -199,7 +361,13 @@ export default function ImportScreen() {
             <TextInput
               style={styles.csv}
               value={csv}
-              onChangeText={setCsv}
+              onChangeText={(v) => {
+                setCsv(v);
+                // Invalidate preview when paste changes after map.
+                if (uploadedCsv != null && v !== uploadedCsv) {
+                  setPreview([]);
+                }
+              }}
               multiline
               autoCapitalize="none"
               autoCorrect={false}
@@ -208,7 +376,7 @@ export default function ImportScreen() {
             {job ? (
               <View style={styles.fileChip}>
                 <Text style={styles.fileChipText}>
-                  📄 paste.csv · {job.row_count || "…"} rows
+                  📄 paste.csv · {preview.length || job.row_count || "…"} rows
                 </Text>
               </View>
             ) : null}
@@ -286,9 +454,14 @@ export default function ImportScreen() {
 
         <Card title="4 · Preview">
           {preview.length === 0 ? (
-            <Text style={styles.hint}>Apply mapping to preview the first rows.</Text>
+            <Text style={styles.hint}>
+              Apply mapping to preview the first rows. Then use Import.
+            </Text>
           ) : (
             <View>
+              <Text style={styles.previewCount}>
+                {preview.length} row{preview.length === 1 ? "" : "s"} ready
+              </Text>
               <View style={styles.tableHead}>
                 <Text style={[styles.th, { flex: 0.9 }]}>Date</Text>
                 <Text style={[styles.th, { flex: 1.4 }]}>Description</Text>
@@ -296,11 +469,11 @@ export default function ImportScreen() {
                   Amount
                 </Text>
               </View>
-              {preview.slice(0, 5).map((r, i) => {
+              {preview.slice(0, 8).map((r, i) => {
                 const amt = r.amount ?? 0;
                 const income = amt > 0;
                 return (
-                  <View key={i} style={styles.tableRow}>
+                  <View key={`${r.fingerprint ?? r.name ?? "row"}-${i}`} style={styles.tableRow}>
                     <Text style={[styles.td, { flex: 0.9 }]}>
                       {r.row_date || "—"}
                     </Text>
@@ -316,6 +489,14 @@ export default function ImportScreen() {
                   </View>
                 );
               })}
+              {job?.status !== "committed" ? (
+                <PrimaryButton
+                  label={`Import ${preview.length} rows`}
+                  onPress={() => void onCommit()}
+                  loading={busy}
+                  style={{ marginTop: spacing.md }}
+                />
+              ) : null}
             </View>
           )}
         </Card>
@@ -327,21 +508,13 @@ export default function ImportScreen() {
             style={{ flex: 1 }}
           />
           <PrimaryButton
-            label={
-              job?.status === "committed"
-                ? "Open To Review"
-                : preview.length
-                  ? "Import"
-                  : mapping
-                    ? "Apply mapping"
-                    : "Parse CSV"
-            }
+            label={primaryLabel}
             onPress={() => {
               if (job?.status === "committed") {
                 router.push("/transactions" as never);
                 return;
               }
-              if (preview.length) {
+              if (preview.length > 0 || canImport) {
                 void onCommit();
                 return;
               }
@@ -417,6 +590,12 @@ const styles = StyleSheet.create({
   },
   fileChipText: { fontSize: 13, fontWeight: "600", color: colors.textPrimary },
   hint: { ...type.footnote, color: colors.textSecondary },
+  previewCount: {
+    ...type.footnote,
+    fontWeight: "700",
+    color: colors.accentBlue,
+    marginBottom: spacing.sm,
+  },
   mapRow: {
     flexDirection: "row",
     alignItems: "center",
