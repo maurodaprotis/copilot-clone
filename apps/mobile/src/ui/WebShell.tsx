@@ -11,7 +11,7 @@ export function WebShell({ children }: { children: ReactNode }) {
   return (
     <View style={[styles.shell, { backgroundColor: colors.bgPage }]}>
       {desktop ? <WebSidebar /> : null}
-      <View style={styles.main}>{children}</View>
+      <View style={[styles.main, { backgroundColor: colors.bgPage }]}>{children}</View>
     </View>
   );
 }

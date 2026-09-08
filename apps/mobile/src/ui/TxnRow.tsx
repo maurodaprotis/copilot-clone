@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { colors, radius, spacing, type } from "../theme";
+import { radius, spacing, useTheme } from "../theme";
 import { Amount } from "./Amount";
 import { CategoryPill } from "./CategoryPill";
 
@@ -49,13 +49,16 @@ export function TxnRow({
   checked,
   onToggleCheck,
 }: Props) {
+  const { colors, type } = useTheme();
   const glyphBg = categoryColor
     ? hexToRgba(categoryColor, 0.2)
     : colors.bgMuted;
 
   const main = (
     <>
-      {selected ? <View style={styles.selBar} /> : null}
+      {selected ? (
+        <View style={[styles.selBar, { backgroundColor: colors.bgSelectionBar }]} />
+      ) : null}
       {showCheckbox ? (
         <Pressable
           onPress={(e) => {
@@ -63,7 +66,17 @@ export function TxnRow({
             onToggleCheck?.();
           }}
           hitSlop={6}
-          style={[styles.checkbox, (checked || selected) && styles.checkboxOn]}
+          style={[
+            styles.checkbox,
+            {
+              borderColor: colors.borderSubtle,
+              backgroundColor: colors.bgCard,
+            },
+            (checked || selected) && {
+              backgroundColor: colors.accentBlue,
+              borderColor: colors.accentBlue,
+            },
+          ]}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: !!(checked || selected) }}
         >
@@ -77,11 +90,17 @@ export function TxnRow({
       )}
       <View style={styles.mid}>
         <View style={styles.titleLine}>
-          <Text style={styles.merchant} numberOfLines={1}>
+          <Text
+            style={[type.headline, styles.merchant, { color: colors.textPrimary }]}
+            numberOfLines={1}
+          >
             {merchant}
           </Text>
           {account ? (
-            <Text style={styles.account} numberOfLines={1}>
+            <Text
+              style={[type.footnote, styles.account, { color: colors.textTertiary }]}
+              numberOfLines={1}
+            >
               {account}
             </Text>
           ) : null}
@@ -98,10 +117,18 @@ export function TxnRow({
   // nested Pressables swallow / miss clicks (pointer-events).
   if (onPress) {
     return (
-      <View style={[styles.row, selected && styles.selected]}>
+      <View
+        style={[
+          styles.row,
+          selected && { backgroundColor: colors.bgSelection },
+        ]}
+      >
         <Pressable
           onPress={onPress}
-          style={({ pressed }) => [styles.rowPress, pressed && styles.pressed]}
+          style={({ pressed }) => [
+            styles.rowPress,
+            pressed && { backgroundColor: colors.accentBlueSoft },
+          ]}
         >
           {main}
         </Pressable>
@@ -110,7 +137,12 @@ export function TxnRow({
     );
   }
   return (
-    <View style={[styles.row, selected && styles.selected]}>
+    <View
+      style={[
+        styles.row,
+        selected && { backgroundColor: colors.bgSelection },
+      ]}
+    >
       {main}
       {trailing ? <View style={styles.trailingSlot}>{trailing}</View> : null}
     </View>
@@ -138,9 +170,6 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     zIndex: 2,
   },
-  selected: {
-    backgroundColor: colors.bgSelection,
-  },
   selBar: {
     position: "absolute",
     left: 0,
@@ -148,29 +177,20 @@ const styles = StyleSheet.create({
     bottom: 4,
     width: 3,
     borderRadius: 2,
-    backgroundColor: colors.bgSelectionBar,
   },
-  pressed: { backgroundColor: colors.accentBlueSoft },
   checkbox: {
     width: 18,
     height: 18,
     borderRadius: 4,
     borderWidth: 1.5,
-    borderColor: colors.borderSubtle,
-    backgroundColor: colors.bgCard,
     alignItems: "center",
     justifyContent: "center",
-  },
-  checkboxOn: {
-    backgroundColor: colors.accentBlue,
-    borderColor: colors.accentBlue,
   },
   checkMark: { color: "#fff", fontSize: 11, fontWeight: "700", lineHeight: 12 },
   glyph: {
     width: 28,
     height: 28,
     borderRadius: radius.pill,
-    backgroundColor: colors.bgMuted,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -182,11 +202,9 @@ const styles = StyleSheet.create({
     gap: 8,
     flexWrap: "nowrap",
   },
-  merchant: { ...type.headline, fontSize: 14, lineHeight: 18, flexShrink: 1 },
+  merchant: { fontSize: 14, lineHeight: 18, flexShrink: 1 },
   account: {
-    ...type.footnote,
     fontSize: 12,
-    color: colors.textTertiary,
     flexShrink: 2,
   },
 });

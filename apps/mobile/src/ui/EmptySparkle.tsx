@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { colors, spacing, type } from "../theme";
+import { spacing, useTheme } from "../theme";
 import { PrimaryButton } from "./Button";
 
 type Props = {
@@ -20,18 +20,19 @@ export function EmptySparkle({
   onCta,
   secondary,
 }: Props) {
+  const { colors, type } = useTheme();
   return (
     <View style={styles.wrap}>
       <View style={styles.halo}>
-        <View style={[styles.dot, styles.d1]} />
-        <View style={[styles.dot, styles.d2]} />
-        <View style={[styles.dot, styles.d3]} />
-        <View style={[styles.dot, styles.d4]} />
-        <Text style={styles.sparkleLg}>✦</Text>
-        <Text style={styles.sparkleSm}>✦</Text>
+        <View style={[styles.dot, styles.d1, { backgroundColor: colors.sparkleBlue }]} />
+        <View style={[styles.dot, styles.d2, { backgroundColor: colors.sparkleBlue }]} />
+        <View style={[styles.dot, styles.d3, { backgroundColor: colors.sparkleBlue }]} />
+        <View style={[styles.dot, styles.d4, { backgroundColor: colors.sparkleBlue }]} />
+        <Text style={[styles.sparkleLg, { color: colors.sparkleBlue }]}>✦</Text>
+        <Text style={[styles.sparkleSm, { color: colors.accentBlue }]}>✦</Text>
       </View>
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.body}>{body}</Text>
+      <Text style={[type.title3, styles.title, { color: colors.textPrimary }]}>{title}</Text>
+      <Text style={[type.footnote, styles.body, { color: colors.textSecondary }]}>{body}</Text>
       {ctaLabel && onCta ? (
         <PrimaryButton
           label={ctaLabel}
@@ -62,7 +63,6 @@ const styles = StyleSheet.create({
   },
   sparkleLg: {
     fontSize: 30,
-    color: colors.sparkleBlue,
     fontWeight: "700",
     marginLeft: -8,
   },
@@ -71,28 +71,23 @@ const styles = StyleSheet.create({
     right: 14,
     top: 10,
     fontSize: 16,
-    color: colors.accentBlue,
     fontWeight: "700",
     opacity: 0.85,
   },
   dot: {
     position: "absolute",
     borderRadius: 999,
-    backgroundColor: colors.sparkleBlue,
   },
   d1: { top: 8, left: 18, width: 4, height: 4, opacity: 0.7 },
   d2: { top: 28, right: 10, width: 3, height: 3, opacity: 0.55 },
   d3: { bottom: 10, left: 22, width: 3, height: 3, opacity: 0.5 },
   d4: { bottom: 18, right: 28, width: 5, height: 5, opacity: 0.35 },
   title: {
-    ...type.title3,
     textAlign: "center",
     marginBottom: spacing.xs,
     fontWeight: "700",
   },
   body: {
-    ...type.footnote,
-    color: colors.textSecondary,
     textAlign: "center",
     maxWidth: 280,
     lineHeight: 17,

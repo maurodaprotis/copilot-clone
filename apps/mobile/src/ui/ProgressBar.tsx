@@ -1,5 +1,5 @@
 import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
-import { colors, radius } from "../theme";
+import { radius, useTheme } from "../theme";
 
 type Props = {
   progress: number; // 0..1+
@@ -11,21 +11,24 @@ type Props = {
 
 export function ProgressBar({
   progress,
-  color = colors.progressFill,
-  trackColor = colors.progressTrack,
+  color,
+  trackColor,
   height = 6,
   style,
 }: Props) {
+  const { colors } = useTheme();
+  const fill = color ?? colors.progressFill;
+  const track = trackColor ?? colors.progressTrack;
   const pct = Math.max(0, Math.min(progress, 1));
   const over = progress > 1;
   return (
-    <View style={[styles.track, { height, backgroundColor: trackColor }, style]}>
+    <View style={[styles.track, { height, backgroundColor: track }, style]}>
       <View
         style={[
           styles.fill,
           {
             width: `${pct * 100}%`,
-            backgroundColor: over ? colors.overBudgetRed : color,
+            backgroundColor: over ? colors.overBudgetRed : fill,
             height,
           },
         ]}

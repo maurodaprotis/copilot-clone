@@ -6,7 +6,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { colors, radius, spacing, type } from "../theme";
+import { radius, spacing, useTheme } from "../theme";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "accent";
 
@@ -28,6 +28,39 @@ export function PrimaryButton({
   variant = "primary",
   style,
 }: Props) {
+  const { colors, type } = useTheme();
+  const variants = {
+    primary: {
+      bg: { backgroundColor: colors.navy },
+      border: {} as ViewStyle,
+      pressed: { opacity: 0.9 },
+      text: { color: colors.textInverse },
+    },
+    accent: {
+      bg: { backgroundColor: colors.accentBlue },
+      border: {} as ViewStyle,
+      pressed: { backgroundColor: colors.primaryPressed },
+      text: { color: colors.textInverse },
+    },
+    secondary: {
+      bg: { backgroundColor: colors.incomeGreen },
+      border: {} as ViewStyle,
+      pressed: { opacity: 0.9 },
+      text: { color: colors.textInverse },
+    },
+    ghost: {
+      bg: { backgroundColor: colors.bgCard },
+      border: { borderWidth: 1, borderColor: colors.borderSubtle },
+      pressed: { opacity: 0.85 },
+      text: { color: colors.textPrimary },
+    },
+    danger: {
+      bg: { backgroundColor: colors.overBudgetRed },
+      border: {} as ViewStyle,
+      pressed: { opacity: 0.9 },
+      text: { color: colors.textInverse },
+    },
+  } as const;
   const v = variants[variant];
   return (
     <Pressable
@@ -46,7 +79,7 @@ export function PrimaryButton({
       {loading ? (
         <ActivityIndicator color={v.text.color as string} />
       ) : (
-        <Text style={[styles.label, v.text]}>{label}</Text>
+        <Text style={[type.callout, styles.label, v.text]}>{label}</Text>
       )}
     </Pressable>
   );
@@ -74,6 +107,7 @@ export function IconButton({
   disabled,
   style,
 }: IconBtnProps) {
+  const { colors } = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
@@ -82,6 +116,10 @@ export function IconButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.iconBtn,
+        {
+          backgroundColor: colors.bgCard,
+          borderColor: colors.borderSubtle,
+        },
         (disabled || loading) && styles.disabled,
         pressed && !disabled && { opacity: 0.75 },
         style,
@@ -90,7 +128,7 @@ export function IconButton({
       {loading ? (
         <ActivityIndicator size="small" color={colors.textSecondary} />
       ) : (
-        <Text style={styles.iconGlyph}>{glyph}</Text>
+        <Text style={[styles.iconGlyph, { color: colors.textSecondary }]}>{glyph}</Text>
       )}
     </Pressable>
   );
@@ -105,55 +143,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     minHeight: 44,
   },
-  label: { ...type.callout, fontWeight: "600" },
+  label: { fontWeight: "600" },
   disabled: { opacity: 0.5 },
   iconBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.bgCard,
     borderWidth: 1,
-    borderColor: colors.borderSubtle,
     alignItems: "center",
     justifyContent: "center",
   },
   iconGlyph: {
     fontSize: 16,
-    color: colors.textSecondary,
     fontWeight: "600",
     lineHeight: 18,
   },
 });
-
-const variants = {
-  primary: {
-    bg: { backgroundColor: colors.navy },
-    border: {},
-    pressed: { opacity: 0.9 },
-    text: { color: colors.textInverse },
-  },
-  accent: {
-    bg: { backgroundColor: colors.accentBlue },
-    border: {},
-    pressed: { backgroundColor: colors.primaryPressed },
-    text: { color: colors.textInverse },
-  },
-  secondary: {
-    bg: { backgroundColor: colors.incomeGreen },
-    border: {},
-    pressed: { opacity: 0.9 },
-    text: { color: colors.textInverse },
-  },
-  ghost: {
-    bg: { backgroundColor: colors.bgCard },
-    border: { borderWidth: 1, borderColor: colors.borderSubtle },
-    pressed: { opacity: 0.85 },
-    text: { color: colors.textPrimary },
-  },
-  danger: {
-    bg: { backgroundColor: colors.overBudgetRed },
-    border: {},
-    pressed: { opacity: 0.9 },
-    text: { color: colors.textInverse },
-  },
-} as const;

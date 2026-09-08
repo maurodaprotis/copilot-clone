@@ -37,7 +37,7 @@ import {
   pullRecurringsFromApi,
 } from "../../src/offline/recurrings";
 import { API_URL, DEMO_USER_ID, getApiUserId } from "../../src/config";
-import { colors, radius, spacing, type } from "../../src/theme";
+import { radius, spacing, useTheme } from "../../src/theme";
 import {
   Amount,
   Card,
@@ -142,6 +142,7 @@ function hexToRgba(hex: string, alpha: number): string {
 
 export default function DashboardScreen() {
   const router = useRouter();
+  const { colors, type } = useTheme();
   const [items, setItems] = useState<LocalTransaction[]>([]);
   /** Intelligence unlock CTA count — not 1:1 with Not reviewed inbox (Phase 2). */
   const [unlockCount, setUnlockCount] = useState(0);
@@ -308,6 +309,7 @@ export default function DashboardScreen() {
         <Text
           style={[
             styles.spendMeta,
+            { color: colors.textSecondary },
             underBudget && { color: colors.incomeGreenText },
           ]}
         >
@@ -344,11 +346,11 @@ export default function DashboardScreen() {
         <View style={styles.nwCol}>
           <View style={styles.dotRow}>
             <View style={[styles.dot, { backgroundColor: colors.assetBlueDot }]} />
-            <Text style={styles.nwLabel}>Assets</Text>
+            <Text style={[styles.nwLabel, { color: colors.textSecondary }]}>Assets</Text>
           </View>
-          <Text style={styles.nwValue}>{usd(assets)}</Text>
+          <Text style={[styles.nwValue, { color: colors.textPrimary }]}>{usd(assets)}</Text>
           {assetsPct > 0 ? (
-            <View style={[styles.pctPill, styles.pctUp]}>
+            <View style={[styles.pctPill, { backgroundColor: colors.incomeGreenBg }]}>
               <Text style={[styles.pctText, { color: colors.incomeGreenText }]}>
                 ↗ {assetsPct.toFixed(1)}%
               </Text>
@@ -358,11 +360,11 @@ export default function DashboardScreen() {
         <View style={styles.nwCol}>
           <View style={styles.dotRow}>
             <View style={[styles.dot, { backgroundColor: colors.debtOrangeDot }]} />
-            <Text style={styles.nwLabel}>Debts</Text>
+            <Text style={[styles.nwLabel, { color: colors.textSecondary }]}>Debts</Text>
           </View>
-          <Text style={styles.nwValue}>{usd(debts)}</Text>
+          <Text style={[styles.nwValue, { color: colors.textPrimary }]}>{usd(debts)}</Text>
           {debtsPct > 0 ? (
-            <View style={[styles.pctPill, styles.pctDown]}>
+            <View style={[styles.pctPill, { backgroundColor: colors.overBudgetRedSoft }]}>
               <Text style={[styles.pctText, { color: colors.overBudgetRed }]}>
                 ↗ {debtsPct.toFixed(1)}%
               </Text>
@@ -401,7 +403,7 @@ export default function DashboardScreen() {
         <EmptySparkle title={unlockCopy.title} body={unlockCopy.body} />
       ) : (
         <>
-          <Text style={styles.unlockBanner}>{unlockCopy.title}</Text>
+          <Text style={[styles.unlockBanner, { color: colors.textSecondary }]}>{unlockCopy.title}</Text>
           {items.slice(0, 4).map((txn) => (
             <TxnRow
               key={txn.id}
@@ -431,7 +433,7 @@ export default function DashboardScreen() {
       onAction={() => router.push("/categories")}
     >
       {topCats.length === 0 && !loading ? (
-        <Text style={styles.emptyHint}>No spending this month yet.</Text>
+        <Text style={[styles.emptyHint, { color: colors.textSecondary }]}>No spending this month yet.</Text>
       ) : (
         topCats.map((row) => {
           const share =
@@ -449,7 +451,7 @@ export default function DashboardScreen() {
                 <Text style={styles.catEmoji}>{row.category.emoji || "•"}</Text>
               </View>
               <View style={styles.catMid}>
-                <Text style={styles.catName} numberOfLines={1}>
+                <Text style={[styles.catName, { color: colors.textPrimary }]} numberOfLines={1}>
                   {row.category.name}
                 </Text>
                 <ProgressBar
@@ -458,8 +460,8 @@ export default function DashboardScreen() {
                   height={4}
                 />
               </View>
-              <Text style={styles.catPct}>{share}%</Text>
-              <Text style={styles.catAmt}>{usd(row.spent)}</Text>
+              <Text style={[styles.catPct, { color: colors.textTertiary }]}>{share}%</Text>
+              <Text style={[styles.catAmt, { color: colors.textPrimary }]}>{usd(row.spent)}</Text>
             </View>
           );
         })
@@ -488,7 +490,7 @@ export default function DashboardScreen() {
         {topCatsCard}
       </DashboardGrid>
 
-      {status ? <Text style={styles.status}>{status}</Text> : null}
+      {status ? <Text style={[styles.status, { color: colors.textPrimary }]}>{status}</Text> : null}
 
       <Card
         style={styles.upcoming}
@@ -497,7 +499,7 @@ export default function DashboardScreen() {
         onAction={() => router.push("/recurrings")}
       >
         {upcoming.length === 0 && !loading ? (
-          <Text style={styles.emptyHint}>
+          <Text style={[styles.emptyHint, { color: colors.textSecondary }]}>
             No bills due soon. Add templates under More → Recurrings.
           </Text>
         ) : (
@@ -519,30 +521,30 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   gridCard: { flex: 1, marginBottom: 0 },
   heroLeft: { marginBottom: spacing.sm },
-  spendMeta: { ...type.footnote, marginTop: 4, color: colors.textSecondary, fontWeight: "500" },
-  status: { ...type.footnote, color: colors.textPrimary, marginTop: spacing.sm },
+  spendMeta: { marginTop: 4, fontSize: 12, lineHeight: 16, fontWeight: "500" },
+  status: { fontSize: 12, lineHeight: 16, marginTop: spacing.sm },
   reviewBtn: { minWidth: 72, minHeight: 32, paddingVertical: 6, paddingHorizontal: 10 },
   unlockBanner: {
-    ...type.footnote,
-    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "600",
     marginBottom: spacing.sm,
   },
-  emptyHint: { ...type.footnote, textAlign: "center", paddingVertical: 8, color: colors.textSecondary },
+  emptyHint: { fontSize: 12, lineHeight: 16, textAlign: "center", paddingVertical: 8 },
   nwRow: { flexDirection: "row", gap: spacing.lg, marginBottom: spacing.sm },
   nwCol: { flex: 1 },
   dotRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
   dot: { width: 8, height: 8, borderRadius: 4 },
-  nwLabel: { ...type.footnote, color: colors.textSecondary },
-  nwValue: { ...type.title3, fontSize: 17, marginBottom: 4 },
+  nwLabel: { fontSize: 12, lineHeight: 16 },
+  nwValue: { fontSize: 17, lineHeight: 22, fontWeight: "600", marginBottom: 4 },
   pctPill: {
     alignSelf: "flex-start",
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: radius.pill,
   },
-  pctUp: { backgroundColor: colors.incomeGreenBg },
-  pctDown: { backgroundColor: colors.overBudgetRedSoft },
+  pctUp: {},
+  pctDown: {},
   pctText: { fontSize: 11, fontWeight: "700" },
   catRow: {
     flexDirection: "row",
@@ -560,14 +562,14 @@ const styles = StyleSheet.create({
   },
   catEmoji: { fontSize: 15 },
   catMid: { flex: 1, minWidth: 0, gap: 4 },
-  catName: { ...type.headline, fontSize: 14 },
+  catName: { fontSize: 14, lineHeight: 18, fontWeight: "600" },
   catPct: {
-    ...type.footnote,
-    color: colors.textTertiary,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "600",
     minWidth: 32,
     textAlign: "right",
   },
-  catAmt: { ...type.amountList, fontSize: 14, minWidth: 52, textAlign: "right" },
+  catAmt: { fontSize: 14, fontWeight: "600", minWidth: 52, textAlign: "right" },
   upcoming: { marginTop: spacing.cardGap },
 });

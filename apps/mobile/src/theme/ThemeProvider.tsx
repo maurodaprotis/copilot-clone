@@ -14,6 +14,7 @@ import {
   darkThemeCss,
   paletteFor,
   resolveThemeMode,
+  syncRnWebAtomicStylesheets,
   type ColorPalette,
   type ThemeMode,
 } from "./palettes";
@@ -57,8 +58,15 @@ function applyDomTheme(resolved: "Light" | "Dark"): void {
   const root = document.documentElement;
   root.dataset.ccTheme = resolved === "Dark" ? "dark" : "light";
   const palette = paletteFor(resolved);
+  root.style.backgroundColor = palette.bgPage;
+  root.style.colorScheme = resolved === "Dark" ? "dark" : "light";
   document.body.style.backgroundColor = palette.bgPage;
   document.body.style.color = palette.textPrimary;
+  const appRoot = document.getElementById("root");
+  if (appRoot) {
+    appRoot.style.backgroundColor = palette.bgPage;
+    appRoot.style.minHeight = "100%";
+  }
   let styleEl = document.getElementById("copilot-dark-theme");
   if (resolved === "Dark") {
     if (!styleEl) {
@@ -70,6 +78,8 @@ function applyDomTheme(resolved: "Light" | "Dark"): void {
   } else if (styleEl) {
     styleEl.remove();
   }
+  // RN-web StyleSheet.create colors live in #react-native-stylesheet — remap them.
+  syncRnWebAtomicStylesheets(resolved);
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -96,8 +106,24 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     applyDomTheme(resolved);
-    // Keep legacy module `colors` keys in sync for runtime reads in render.
+    // Keep legacy module `colors` / `type` in sync for runtime reads (not StyleSheet snapshots).
     Object.assign(lightColors, colors);
+    const built = buildType(colors) as Record<string, Record<string, unknown>>;
+    for (const [key, style] of Object.entries(built)) {
+      const target = (lightType as Record<string, Record<string, unknown>>)[key];
+      if (target && style) Object.assign(target, style);
+    }
+    // Late StyleSheet inserts (first paint of screens) land after this effect — re-sync.
+    if (Platform.OS === "web") {
+      const t1 = requestAnimationFrame(() => syncRnWebAtomicStylesheets(resolved));
+      const t2 = window.setTimeout(() => syncRnWebAtomicStylesheets(resolved), 50);
+      const t3 = window.setTimeout(() => syncRnWebAtomicStylesheets(resolved), 250);
+      return () => {
+        cancelAnimationFrame(t1);
+        window.clearTimeout(t2);
+        window.clearTimeout(t3);
+      };
+    }
   }, [resolved, colors]);
 
   const value = useMemo(

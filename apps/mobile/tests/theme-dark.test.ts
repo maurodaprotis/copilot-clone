@@ -6,6 +6,10 @@ const palettesSrc = readFileSync(
   resolve(__dirname, "../src/theme/palettes.ts"),
   "utf8",
 );
+const providerSrc = readFileSync(
+  resolve(__dirname, "../src/theme/ThemeProvider.tsx"),
+  "utf8",
+);
 
 describe("dark theme product gate", () => {
   it("ships Dark (DARK_THEME_AVAILABLE=true)", () => {
@@ -27,6 +31,26 @@ describe("dark theme product gate", () => {
   });
 });
 
+describe("dark theme DOM + atomic remap", () => {
+  it("ThemeProvider paints html/body/#root and syncs RN-web atomic sheets", () => {
+    expect(providerSrc).toMatch(/root\.style\.backgroundColor = palette\.bgPage/);
+    expect(providerSrc).toMatch(/getElementById\("root"\)/);
+    expect(providerSrc).toMatch(/syncRnWebAtomicStylesheets/);
+  });
+
+  it("exports atomic stylesheet sync for RN-web StyleSheet classes", () => {
+    expect(palettesSrc).toMatch(/export function syncRnWebAtomicStylesheets/);
+    expect(palettesSrc).toMatch(/export function buildAtomicColorPairs/);
+    expect(palettesSrc).toMatch(/react-native-stylesheet|ATOMIC_COLOR_PROPS|insertRule/);
+  });
+
+  it("darkThemeCss forces page chrome + placeholder contrast", () => {
+    expect(palettesSrc).toMatch(/#root > div/);
+    expect(palettesSrc).toMatch(/input::placeholder/);
+    expect(palettesSrc).toMatch(/color-scheme: dark/);
+  });
+});
+
 describe("settings Appearance exposes Dark", () => {
   it("offers Light | Auto | Dark", () => {
     const settings = readFileSync(
@@ -35,5 +59,19 @@ describe("settings Appearance exposes Dark", () => {
     );
     expect(settings).toMatch(/options=\{\["Light", "Auto", "Dark"\]\}/);
     expect(settings).not.toMatch(/coming soon/i);
+  });
+});
+
+describe("shared chrome uses useTheme (not StyleSheet-baked light navy)", () => {
+  it("TxnRow / Screen / WebShell / DashboardGrid read theme at render", () => {
+    const txn = readFileSync(resolve(__dirname, "../src/ui/TxnRow.tsx"), "utf8");
+    const screen = readFileSync(resolve(__dirname, "../src/ui/Screen.tsx"), "utf8");
+    const shell = readFileSync(resolve(__dirname, "../src/ui/WebShell.tsx"), "utf8");
+    const grid = readFileSync(resolve(__dirname, "../src/ui/DashboardGrid.tsx"), "utf8");
+    expect(txn).toMatch(/useTheme/);
+    expect(txn).toMatch(/colors\.textPrimary/);
+    expect(screen).toMatch(/backgroundColor: colors\.bgPage/);
+    expect(shell).toMatch(/backgroundColor: colors\.bgPage/);
+    expect(grid).toMatch(/backgroundColor: colors\.bgPage/);
   });
 });

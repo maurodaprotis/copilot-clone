@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { colors, radius, spacing, type } from "../theme";
+import { radius, spacing, useTheme } from "../theme";
 import { PrimaryButton } from "./Button";
 import { EmptySparkle } from "./EmptySparkle";
 
@@ -24,6 +24,7 @@ export function EmptyState({
   secondary,
   sparkle,
 }: Props) {
+  const { colors, type } = useTheme();
   if (sparkle) {
     return (
       <EmptySparkle
@@ -37,11 +38,13 @@ export function EmptyState({
   }
   return (
     <View style={styles.wrap}>
-      <View style={styles.iconBubble}>
+      <View style={[styles.iconBubble, { backgroundColor: colors.accentBlueSoft }]}>
         <Text style={styles.icon}>{icon}</Text>
       </View>
-      <Text style={styles.title}>{title}</Text>
-      {body ? <Text style={styles.body}>{body}</Text> : null}
+      <Text style={[type.headline, styles.title, { color: colors.textPrimary }]}>{title}</Text>
+      {body ? (
+        <Text style={[type.footnote, styles.body, { color: colors.textSecondary }]}>{body}</Text>
+      ) : null}
       {ctaLabel && onCta ? (
         <PrimaryButton
           label={ctaLabel}
@@ -66,15 +69,13 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: radius.pill,
-    backgroundColor: colors.accentBlueSoft,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: spacing.sm,
   },
   icon: { fontSize: 24 },
-  title: { ...type.headline, textAlign: "center", marginBottom: 2 },
+  title: { textAlign: "center", marginBottom: 2 },
   body: {
-    ...type.footnote,
     textAlign: "center",
     maxWidth: 260,
     lineHeight: 16,
