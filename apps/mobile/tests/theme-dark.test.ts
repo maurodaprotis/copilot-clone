@@ -75,3 +75,17 @@ describe("shared chrome uses useTheme (not StyleSheet-baked light navy)", () => 
     expect(grid).toMatch(/backgroundColor: colors\.bgPage/);
   });
 });
+
+describe("dark theme rgba inline remap (Dashboard SSR)", () => {
+  it("darkThemeCss matches RN-web rgba(r,g,b,1.00) style attributes", () => {
+    expect(palettesSrc).toMatch(/function rgbaForms/);
+    expect(palettesSrc).toMatch(/rgba\(\$\{r\},\$\{g\},\$\{b\},1\.00\)/);
+    expect(palettesSrc).toMatch(/rulesForColor/);
+    expect(palettesSrc).toMatch(/React Navigation DefaultTheme/);
+  });
+
+  it("ThemeProvider boots theme from storage before paint", () => {
+    expect(providerSrc).toMatch(/bootThemeFromStorage/);
+    expect(providerSrc).toMatch(/root\.dataset\.ccTheme !== want/);
+  });
+});
