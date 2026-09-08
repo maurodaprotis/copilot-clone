@@ -18,4 +18,4 @@ export {
   type ThemeMode,
   type ColorPalette,
 } from "./palettes";
-export { ThemeProvider, useTheme } from "./ThemeProvider";
+export { ThemeProvider, useTheme, bootThemeFromStorage } from "./ThemeProvider";

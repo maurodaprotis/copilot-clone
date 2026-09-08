@@ -142,7 +142,7 @@ function hexToRgba(hex: string, alpha: number): string {
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const { colors, type } = useTheme();
+  const { colors, type, resolved } = useTheme();
   const [items, setItems] = useState<LocalTransaction[]>([]);
   /** Intelligence unlock CTA count — not 1:1 with Not reviewed inbox (Phase 2). */
   const [unlockCount, setUnlockCount] = useState(0);
@@ -492,28 +492,33 @@ export default function DashboardScreen() {
 
       {status ? <Text style={[styles.status, { color: colors.textPrimary }]}>{status}</Text> : null}
 
-      <Card
-        style={styles.upcoming}
-        title="Next two weeks"
-        actionLabel="Recurrings ›"
-        onAction={() => router.push("/recurrings")}
+      <View
+        key={`upcoming-${resolved}`}
+        style={[styles.upcomingWrap, { backgroundColor: colors.bgPage }]}
       >
-        {upcoming.length === 0 && !loading ? (
-          <Text style={[styles.emptyHint, { color: colors.textSecondary }]}>
-            No bills due soon. Add templates under More → Recurrings.
-          </Text>
-        ) : (
-          upcoming.map((r) => (
-            <TxnRow
-              key={r.id}
-              merchant={r.name}
-              account={`due ${r.next_expected_date}`}
-              amountLabel={formatMoney(r.expected_amount, r.currency)}
-              onPress={() => router.push("/recurrings")}
-            />
-          ))
-        )}
-      </Card>
+        <Card
+          style={[styles.upcoming, { backgroundColor: colors.bgCard }]}
+          title="Next two weeks"
+          actionLabel="Recurrings ›"
+          onAction={() => router.push("/recurrings")}
+        >
+          {upcoming.length === 0 && !loading ? (
+            <Text style={[styles.emptyHint, { color: colors.textSecondary }]}>
+              No bills due soon. Add templates under More → Recurrings.
+            </Text>
+          ) : (
+            upcoming.map((r) => (
+              <TxnRow
+                key={r.id}
+                merchant={r.name}
+                account={`due ${r.next_expected_date}`}
+                amountLabel={formatMoney(r.expected_amount, r.currency)}
+                onPress={() => router.push("/recurrings")}
+              />
+            ))
+          )}
+        </Card>
+      </View>
     </Screen>
   );
 }

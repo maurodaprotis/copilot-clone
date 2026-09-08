@@ -104,6 +104,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const colors = paletteFor(resolved);
   const type = useMemo(() => buildType(colors), [colors]);
 
+  // Sync DOM before paint when possible (avoids FOUC / sticky SSR rgba whites).
+  if (Platform.OS === "web" && typeof document !== "undefined") {
+    const root = document.documentElement;
+    const want = resolved === "Dark" ? "dark" : "light";
+    if (root.dataset.ccTheme !== want) {
+      applyDomTheme(resolved);
+    }
+  }
+
   useEffect(() => {
     applyDomTheme(resolved);
     // Keep legacy module `colors` / `type` in sync for runtime reads (not StyleSheet snapshots).
@@ -146,4 +155,26 @@ export function useTheme(): ThemeContextValue {
     };
   }
   return ctx;
+}
+
+/** Runs as soon as the entry bundle evaluates — before React hydration paint when possible. */
+export function bootThemeFromStorage(): void {
+  if (typeof document === "undefined") return;
+  let preference: ThemeMode = "Auto";
+  try {
+    const raw = localStorage.getItem(THEME_KEY);
+    if (raw === "Light" || raw === "Auto" || raw === "Dark") preference = raw;
+  } catch {
+    /* ignore */
+  }
+  const systemDark =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const resolved = resolveThemeMode(preference, systemDark);
+  applyDomTheme(resolved);
+}
+
+if (typeof document !== "undefined") {
+  bootThemeFromStorage();
 }

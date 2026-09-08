@@ -128,10 +128,35 @@ function rgbCssCompact({ r, g, b }: { r: number; g: number; b: number }): string
   return `rgb(${r},${g},${b})`;
 }
 
+/** RN-web serializes StyleSheet colors as rgba(r,g,b,1.00) in style="" attributes. */
+function rgbaForms({ r, g, b }: { r: number; g: number; b: number }): string[] {
+  return [
+    `rgba(${r}, ${g}, ${b}, 1)`,
+    `rgba(${r},${g},${b},1)`,
+    `rgba(${r}, ${g}, ${b}, 1.0)`,
+    `rgba(${r},${g},${b},1.0)`,
+    `rgba(${r}, ${g}, ${b}, 1.00)`,
+    `rgba(${r},${g},${b},1.00)`,
+    `rgba(${r}, ${g}, ${b}, 1.000)`,
+    `rgba(${r},${g},${b},1.000)`,
+  ];
+}
+
 type PropKind = "background-color" | "color" | "border-color";
 
 function rule(prop: PropKind, from: string, to: string): string {
   return `html[data-cc-theme="dark"] #root [style*="${prop}: ${from}"],\nhtml[data-cc-theme="dark"] #root [style*="${prop}:${from}"] {\n  ${prop}: ${to} !important;\n}`;
+}
+
+function rulesForColor(prop: PropKind, fromRgb: { r: number; g: number; b: number }, toHex: string): string[] {
+  const out: string[] = [
+    rule(prop, rgbCss(fromRgb), toHex),
+    rule(prop, rgbCssCompact(fromRgb), toHex),
+  ];
+  for (const rgba of rgbaForms(fromRgb)) {
+    out.push(rule(prop, rgba, toHex));
+  }
+  return out;
 }
 
 /**
@@ -179,8 +204,7 @@ html[data-cc-theme="dark"] textarea::placeholder {
     if (seen.has(key)) return;
     seen.add(key);
     const toHex = darkHex;
-    chunks.push(rule(kind, rgbCss(from), toHex));
-    chunks.push(rule(kind, rgbCssCompact(from), toHex));
+    chunks.push(...rulesForColor(kind, from, toHex));
   };
 
   // Backgrounds — every differing hex token (white cards included).
@@ -257,6 +281,12 @@ html[data-cc-theme="dark"] #root [style*="border-top-color:rgba(27, 43, 75, 0.06
   border-top-color: ${d.borderSubtle} !important;
 }`);
 
+  // React Navigation DefaultTheme scene background (not our token)
+  {
+    const navBg = parseHex("#F2F2F2");
+    if (navBg) chunks.push(...rulesForColor("background-color", navBg, d.bgPage));
+  }
+
   // Hardcoded light leftovers (Import / Tags / Rules)
   for (const [fromHex, toHex] of [
     ["#F5F7FA", d.bgPage],
@@ -266,12 +296,9 @@ html[data-cc-theme="dark"] #root [style*="border-top-color:rgba(27, 43, 75, 0.06
   ] as const) {
     const from = parseHex(fromHex);
     if (!from) continue;
-    chunks.push(rule("background-color", rgbCss(from), toHex));
-    chunks.push(rule("background-color", rgbCssCompact(from), toHex));
-    chunks.push(rule("border-color", rgbCss(from), toHex));
-    chunks.push(rule("border-color", rgbCssCompact(from), toHex));
-    chunks.push(rule("color", rgbCss(from), toHex));
-    chunks.push(rule("color", rgbCssCompact(from), toHex));
+    chunks.push(...rulesForColor("background-color", from, toHex));
+    chunks.push(...rulesForColor("border-color", from, toHex));
+    chunks.push(...rulesForColor("color", from, toHex));
   }
 
   // Modal scrim rgba
