@@ -33,7 +33,10 @@ function RootLayoutInner() {
 
   useEffect(() => {
     if (Platform.OS === "web" && typeof document !== "undefined") {
-      document.body.style.backgroundColor = themeColors.bg;
+      document.documentElement.style.backgroundColor = themeColors.bgPage;
+      document.body.style.backgroundColor = themeColors.bgPage;
+      const appRoot = document.getElementById("root");
+      if (appRoot) appRoot.style.backgroundColor = themeColors.bgPage;
       document.body.style.fontFamily =
         fontFamily ??
         "Inter, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
@@ -47,7 +50,7 @@ function RootLayoutInner() {
         document.head.appendChild(link);
       }
     }
-  }, [themeColors.bg]);
+  }, [themeColors.bgPage]);
 
   useEffect(() => {
     const sub = Linking.addEventListener("url", ({ url }) => {

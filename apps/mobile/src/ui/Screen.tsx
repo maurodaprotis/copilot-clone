@@ -47,7 +47,12 @@ export function Screen({
   return (
     <ScrollView
       style={[styles.root, { backgroundColor: colors.bgPage }]}
-      contentContainerStyle={[...pad, styles.content, desktop && !flush && styles.contentWeb]}
+      contentContainerStyle={[
+        ...pad,
+        styles.content,
+        desktop && !flush && styles.contentWeb,
+        { backgroundColor: colors.bgPage },
+      ]}
       keyboardShouldPersistTaps="handled"
       refreshControl={
         onRefresh ? (

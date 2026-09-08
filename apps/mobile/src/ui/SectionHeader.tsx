@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { colors, spacing, type } from "../theme";
+import { spacing, useTheme } from "../theme";
 
 type Props = {
   title: string;
@@ -17,18 +17,21 @@ export function SectionHeader({
   onAction,
   right,
 }: Props) {
+  const { colors, type } = useTheme();
   return (
     <View style={styles.row}>
-      <Text style={styles.title}>
+      <Text style={[type.title3, styles.title, { color: colors.textPrimary }]}>
         {title}
         {count != null ? (
-          <Text style={styles.count}> ({count})</Text>
+          <Text style={[styles.count, { color: colors.textSecondary }]}> ({count})</Text>
         ) : null}
       </Text>
       {right}
       {actionLabel && onAction ? (
         <Pressable onPress={onAction} hitSlop={8}>
-          <Text style={styles.action}>{actionLabel}</Text>
+          <Text style={[type.callout, styles.action, { color: colors.textSecondary }]}>
+            {actionLabel}
+          </Text>
         </Pressable>
       ) : null}
     </View>
@@ -40,10 +43,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: spacing.sm,
     marginBottom: spacing.sm,
-    marginTop: spacing.xs,
   },
-  title: { ...type.title3, flex: 1 },
-  count: { color: colors.textSecondary, fontWeight: "600" },
-  action: { ...type.callout, color: colors.textSecondary, fontWeight: "600" },
+  title: { flex: 1 },
+  count: { fontWeight: "600" },
+  action: { fontWeight: "600" },
 });

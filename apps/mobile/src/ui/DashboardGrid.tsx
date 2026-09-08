@@ -1,6 +1,6 @@
 import { Children, type ReactNode } from "react";
 import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
-import { spacing } from "../theme";
+import { spacing, useTheme } from "../theme";
 import { useIsDesktopWeb } from "./useIsDesktopWeb";
 
 type Props = {
@@ -11,10 +11,15 @@ type Props = {
 /** Web: 2-column card grid. Mobile: single column stack. */
 export function DashboardGrid({ children, style }: Props) {
   const desktop = useIsDesktopWeb();
+  const { colors } = useTheme();
   const items = Children.toArray(children).filter(Boolean);
 
   if (!desktop) {
-    return <View style={[styles.stack, style]}>{items}</View>;
+    return (
+      <View style={[styles.stack, { backgroundColor: colors.bgPage }, style]}>
+        {items}
+      </View>
+    );
   }
 
   const rows: ReactNode[][] = [];
@@ -22,7 +27,7 @@ export function DashboardGrid({ children, style }: Props) {
     rows.push(items.slice(i, i + 2));
   }
   return (
-    <View style={[styles.stack, style]}>
+    <View style={[styles.stack, { backgroundColor: colors.bgPage }, style]}>
       {rows.map((row, idx) => (
         <View key={idx} style={styles.row}>
           {row.map((child, j) => (
