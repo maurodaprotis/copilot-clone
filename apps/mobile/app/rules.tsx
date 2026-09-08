@@ -18,8 +18,10 @@ import {
 } from "../src/offline/rulesTagsSplits";
 import { syncOutbox } from "../src/offline/syncOutbox";
 import { createApiTransport } from "../src/sync/apiTransport";
+import { useTheme } from "../src/theme";
 
 export default function RulesScreen() {
+  const { colors } = useTheme();
   const [rules, setRules] = useState<NameRule[]>([]);
   const [cats, setCats] = useState<Record<string, string>>({});
   const [pattern, setPattern] = useState("Starbucks");
@@ -66,21 +68,21 @@ export default function RulesScreen() {
     <>
       <Stack.Screen options={{ title: "Name Rules" }} />
       <ScrollView
-        style={styles.scroll}
+        style={[styles.scroll, { backgroundColor: colors.bgPage }]}
         contentContainerStyle={styles.container}
         refreshControl={
           <RefreshControl refreshing={false} onRefresh={() => void reload()} />
         }
       >
-        <Text style={styles.sub}>
+        <Text style={[styles.sub, { color: colors.textSecondary }]}>
           exact/contains on txn name → category · last-write-wins · apply on
           create/sync
         </Text>
 
-        <View style={styles.card}>
-          <Text style={styles.label}>Pattern</Text>
+        <View style={[styles.card, { backgroundColor: colors.bgCard, borderColor: colors.borderSubtle }]}>
+          <Text style={[styles.label, { color: colors.textPrimary }]}>Pattern</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.bgInput, borderColor: colors.borderSubtle, color: colors.textPrimary }]}
             value={pattern}
             onChangeText={setPattern}
             placeholder="Merchant name"
@@ -89,30 +91,30 @@ export default function RulesScreen() {
             {(["contains", "exact"] as const).map((m) => (
               <Pressable
                 key={m}
-                style={[styles.chip, matchType === m && styles.chipOn]}
+                style={[styles.chip, { backgroundColor: colors.bgMuted, borderColor: colors.borderSubtle }, matchType === m  && { backgroundColor: colors.accentBlue, borderColor: colors.accentBlue }]}
                 onPress={() => setMatchType(m)}
               >
                 <Text
-                  style={[styles.chipText, matchType === m && styles.chipTextOn]}
+                  style={[{ fontSize: 12, color: colors.textSecondary }, matchType === m && { color: colors.textInverse, fontWeight: "600" }]}
                 >
                   {m}
                 </Text>
               </Pressable>
             ))}
           </View>
-          <Text style={styles.label}>Category</Text>
+          <Text style={[styles.label, { color: colors.textPrimary }]}>Category</Text>
           <View style={styles.rowWrap}>
             {["cat-dining", "cat-groceries", "cat-transport", "cat-shopping"].map(
               (id) => (
                 <Pressable
                   key={id}
-                  style={[styles.chip, categoryId === id && styles.chipOn]}
+                  style={[styles.chip, { backgroundColor: colors.bgMuted, borderColor: colors.borderSubtle }, categoryId === id  && { backgroundColor: colors.accentBlue, borderColor: colors.accentBlue }]}
                   onPress={() => setCategoryId(id)}
                 >
                   <Text
                     style={[
-                      styles.chipText,
-                      categoryId === id && styles.chipTextOn,
+                      { fontSize: 12, color: colors.textSecondary },
+                      categoryId === id && { color: colors.textInverse, fontWeight: "600" },
                     ]}
                   >
                     {cats[id] ?? id}
@@ -121,23 +123,23 @@ export default function RulesScreen() {
               ),
             )}
           </View>
-          <Pressable style={styles.btn} onPress={() => void onSave()} disabled={busy}>
+          <Pressable style={[styles.btn, { backgroundColor: colors.accentBlue }]} onPress={() => void onSave()} disabled={busy}>
             {busy ? (
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={styles.btnText}>Save rule</Text>
             )}
           </Pressable>
-          {msg ? <Text style={styles.msg}>{msg}</Text> : null}
+          {msg ? <Text style={[styles.msg, { color: colors.textSecondary }]}>{msg}</Text> : null}
         </View>
 
-        <Text style={styles.section}>Rules ({rules.length})</Text>
+        <Text style={[styles.section, { color: colors.textPrimary }]}>Rules ({rules.length})</Text>
         {rules.map((r) => (
-          <View key={r.id} style={styles.card}>
-            <Text style={styles.cardTitle}>
+          <View key={r.id} style={[styles.card, { backgroundColor: colors.bgCard, borderColor: colors.borderSubtle }]}>
+            <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>
               {r.match_type}: “{r.pattern}”
             </Text>
-            <Text style={styles.cardMeta}>
+            <Text style={[styles.cardMeta, { color: colors.textSecondary }]}>
               → {cats[r.category_id] ?? r.category_id} · updated{" "}
               {r.updated_at.slice(0, 19)}
             </Text>
@@ -149,49 +151,39 @@ export default function RulesScreen() {
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: "#F5F7FA" },
+  scroll: { flex: 1 },
   container: { padding: 20, paddingBottom: 48 },
-  sub: { color: "#666", marginBottom: 16, fontSize: 12 },
+  sub: { marginBottom: 16, fontSize: 12 },
   card: {
-    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 14,
     marginBottom: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#e2e2e6",
   },
   label: { fontWeight: "600", marginBottom: 6, marginTop: 4 },
   input: {
     borderWidth: 1,
-    borderColor: "#ddd",
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 8,
-    backgroundColor: "#fafafa",
   },
   row: { flexDirection: "row", gap: 8, marginBottom: 8 },
   rowWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 },
   chip: {
     borderWidth: 1,
-    borderColor: "#ddd",
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    backgroundColor: "#fafafa",
   },
-  chipOn: { backgroundColor: "#2F6BFF", borderColor: "#2F6BFF" },
-  chipText: { fontSize: 12, color: "#334" },
-  chipTextOn: { color: "#fff", fontWeight: "600" },
   btn: {
-    backgroundColor: "#2F6BFF",
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: "center",
   },
   btnText: { color: "#fff", fontWeight: "600" },
-  msg: { marginTop: 10, color: "#334", fontSize: 13 },
+  msg: { marginTop: 10, fontSize: 13 },
   section: { fontSize: 18, fontWeight: "600", marginBottom: 10, marginTop: 8 },
   cardTitle: { fontSize: 15, fontWeight: "600" },
-  cardMeta: { color: "#666", marginTop: 4, fontSize: 12 },
+  cardMeta: { marginTop: 4, fontSize: 12 },
 });

@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
-import { colors, radius, shadow, spacing } from "../theme";
+import { radius, shadow, spacing, useTheme } from "../theme";
 import { SectionLabel } from "./SectionLabel";
 
 type Props = {
@@ -10,29 +10,43 @@ type Props = {
 
 /** iOS-style inset grouped settings card. */
 export function SettingsGroup({ label, children }: Props) {
+  const { colors } = useTheme();
   return (
     <View style={styles.wrap}>
       {label ? <SectionLabel>{label}</SectionLabel> : null}
-      <View style={styles.card}>{children}</View>
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.bgCard },
+          shadow.card,
+        ]}
+      >
+        {children}
+      </View>
     </View>
   );
 }
 
 export function SettingsDivider() {
-  return <View style={styles.divider} />;
+  const { colors } = useTheme();
+  return (
+    <View
+      style={[
+        styles.divider,
+        { backgroundColor: colors.borderHairline },
+      ]}
+    />
+  );
 }
 
 const styles = StyleSheet.create({
   wrap: { marginBottom: spacing.md },
   card: {
-    backgroundColor: colors.bgCard,
     borderRadius: radius.lg,
     overflow: "hidden",
-    ...shadow.card,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.borderHairline,
     marginLeft: spacing.lg,
   },
 });

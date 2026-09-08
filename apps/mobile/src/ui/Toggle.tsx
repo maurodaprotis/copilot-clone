@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, View } from "react-native";
-import { colors } from "../theme";
+import { useTheme } from "../theme";
 
 type Props = {
   value: boolean;
@@ -8,13 +8,18 @@ type Props = {
 };
 
 export function Toggle({ value, onChange, disabled }: Props) {
+  const { colors } = useTheme();
   return (
     <Pressable
       accessibilityRole="switch"
       accessibilityState={{ checked: value, disabled: !!disabled }}
       disabled={disabled}
       onPress={() => onChange(!value)}
-      style={[styles.track, value && styles.on, disabled && { opacity: 0.5 }]}
+      style={[
+        styles.track,
+        { backgroundColor: value ? colors.toggleOn : colors.toggleOff },
+        disabled && { opacity: 0.5 },
+      ]}
     >
       <View style={[styles.knob, value && styles.knobOn]} />
     </Pressable>
@@ -26,11 +31,9 @@ const styles = StyleSheet.create({
     width: 51,
     height: 31,
     borderRadius: 999,
-    backgroundColor: colors.toggleOff,
     justifyContent: "center",
     paddingHorizontal: 2,
   },
-  on: { backgroundColor: colors.toggleOn },
   knob: {
     width: 27,
     height: 27,

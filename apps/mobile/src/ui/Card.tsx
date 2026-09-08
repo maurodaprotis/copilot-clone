@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
-import { colors, layout, radius, shadow, spacing, type } from "../theme";
+import { layout, radius, shadow, spacing, useTheme } from "../theme";
 
 type Props = {
   children: ReactNode;
@@ -24,20 +24,33 @@ export function Card({
   onPress,
   badge,
 }: Props) {
+  const { colors, type } = useTheme();
   const body = (
-    <View style={[styles.card, padded && styles.padded, style]}>
+    <View
+      style={[
+        styles.card,
+        { backgroundColor: colors.bgCard },
+        shadow.card,
+        padded && styles.padded,
+        style,
+      ]}
+    >
       {title ? (
         <View style={styles.header}>
-          <Text style={styles.title}>{title}</Text>
+          <Text style={[type.headline, { fontSize: 15, letterSpacing: -0.1, color: colors.textPrimary }]}>
+            {title}
+          </Text>
           <View style={styles.headerRight}>
             {badge != null ? (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{badge}</Text>
+              <View style={[styles.badge, { backgroundColor: colors.bgMuted }]}>
+                <Text style={[styles.badgeText, { color: colors.textSecondary }]}>{badge}</Text>
               </View>
             ) : null}
             {actionLabel && onAction ? (
               <Pressable onPress={onAction} hitSlop={8}>
-                <Text style={styles.action}>{actionLabel}</Text>
+                <Text style={[type.footnote, { color: colors.textSecondary, fontWeight: "600" }]}>
+                  {actionLabel}
+                </Text>
               </Pressable>
             ) : null}
           </View>
@@ -58,9 +71,7 @@ export function Card({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.bgCard,
     borderRadius: radius.card,
-    ...shadow.card,
   },
   padded: { padding: layout.cardPadding },
   header: {
@@ -70,21 +81,17 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
-  title: { ...type.headline, fontSize: 15, letterSpacing: -0.1 },
-  action: { ...type.footnote, color: colors.textSecondary, fontWeight: "600" },
   badge: {
     minWidth: 22,
     height: 22,
     paddingHorizontal: 8,
     borderRadius: radius.pill,
-    backgroundColor: colors.bgMuted,
     alignItems: "center",
     justifyContent: "center",
   },
   badgeText: {
     fontSize: 12,
     fontWeight: "700",
-    color: colors.textSecondary,
   },
 });
 

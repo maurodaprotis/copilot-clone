@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { colors, fontFamily, layout, radius, shadow, spacing, type } from "../theme";
+import { fontFamily, layout, radius, shadow, spacing, useTheme } from "../theme";
 import { useIsDesktopWeb } from "./useIsDesktopWeb";
 
 export type SettingsNavId =
@@ -39,6 +39,7 @@ export function SettingsSheet({
 }: Props) {
   const desktop = useIsDesktopWeb();
   const router = useRouter();
+  const { colors, type } = useTheme();
   const [localNav, setLocalNav] = useState<SettingsNavId>(activeNav);
   const nav = onNavChange ? activeNav : localNav;
   const setNav = (id: SettingsNavId) => {
@@ -53,31 +54,88 @@ export function SettingsSheet({
   const sections = ["SETTINGS", "CONNECTIONS", "SUPPORT"] as const;
 
   return (
-    <View style={styles.scrim} accessibilityViewIsModal pointerEvents="box-none">
+    <View
+      style={[styles.scrim, { backgroundColor: colors.bgModalScrim }]}
+      accessibilityViewIsModal
+      pointerEvents="box-none"
+    >
       <Pressable
         style={StyleSheet.absoluteFillObject}
         onPress={() => router.back()}
         accessibilityLabel="Dismiss settings"
       />
-      <View style={styles.modal} pointerEvents="auto">
-        <View style={styles.rail}>
-          <Text style={styles.brand}>Settings</Text>
+      <View
+        style={[
+          styles.modal,
+          { backgroundColor: colors.bgElevated },
+          shadow.modal,
+        ]}
+        pointerEvents="auto"
+      >
+        <View
+          style={[
+            styles.rail,
+            {
+              backgroundColor: colors.bgPage,
+              borderRightColor: colors.borderSubtle,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              type.title3,
+              {
+                paddingHorizontal: spacing.sm,
+                marginBottom: spacing.md,
+                fontFamily,
+                color: colors.textPrimary,
+              },
+            ]}
+          >
+            Settings
+          </Text>
           {sections.map((section) => (
             <View key={section} style={styles.sectionBlock}>
-              <Text style={styles.sectionLabel}>{section}</Text>
+              <Text
+                style={[
+                  type.sectionLabel,
+                  {
+                    paddingHorizontal: spacing.sm,
+                    marginBottom: 4,
+                    color: colors.textTertiary,
+                  },
+                ]}
+              >
+                {section}
+              </Text>
               {NAV.filter((n) => n.section === section).map((item) => {
                 const on = item.id === nav;
                 return (
                   <Pressable
                     key={item.id}
                     onPress={() => setNav(item.id)}
-                    style={[styles.navItem, on && styles.navItemOn]}
+                    style={[
+                      styles.navItem,
+                      on && { backgroundColor: colors.bgSidebarActive },
+                    ]}
                   >
                     <View style={styles.navRow}>
-                      <Text style={[styles.navText, on && styles.navTextOn]}>
+                      <Text
+                        style={[
+                          type.callout,
+                          {
+                            color: on ? colors.accentBlue : colors.textSecondary,
+                            fontWeight: "600",
+                          },
+                        ]}
+                      >
                         {item.label}
                       </Text>
-                      {item.badge ? <View style={styles.navBadge} /> : null}
+                      {item.badge ? (
+                        <View
+                          style={[styles.navBadge, { backgroundColor: colors.accentBlue }]}
+                        />
+                      ) : null}
                     </View>
                   </Pressable>
                 );
@@ -85,16 +143,21 @@ export function SettingsSheet({
             </View>
           ))}
         </View>
-        <View style={styles.pane}>
-          <View style={styles.paneHeader}>
-            <Text style={styles.paneTitle}>{title}</Text>
+        <View style={[styles.pane, { backgroundColor: colors.bgPage }]}>
+          <View
+            style={[
+              styles.paneHeader,
+              { borderBottomColor: colors.borderSubtle },
+            ]}
+          >
+            <Text style={[type.title2, { color: colors.textPrimary }]}>{title}</Text>
             <Pressable
               onPress={() => router.back()}
               hitSlop={10}
-              style={styles.closeBtn}
+              style={[styles.closeBtn, { backgroundColor: colors.bgMuted }]}
               accessibilityLabel="Close settings"
             >
-              <Text style={styles.closeGlyph}>✕</Text>
+              <Text style={[styles.closeGlyph, { color: colors.textSecondary }]}>✕</Text>
             </Pressable>
           </View>
           <ScrollView
@@ -113,7 +176,6 @@ export function SettingsSheet({
 const styles = StyleSheet.create({
   scrim: {
     flex: 1,
-    backgroundColor: colors.bgModalScrim,
     alignItems: "center",
     justifyContent: "center",
     padding: spacing.xxl,
@@ -124,50 +186,31 @@ const styles = StyleSheet.create({
     maxWidth: 860,
     height: "100%",
     maxHeight: 640,
-    backgroundColor: colors.bgElevated,
     borderRadius: radius.modal,
     overflow: "hidden",
     zIndex: 2,
     elevation: 8,
-    ...shadow.modal,
   },
   rail: {
     width: 200,
-    backgroundColor: colors.bgPage,
     borderRightWidth: StyleSheet.hairlineWidth,
-    borderRightColor: colors.borderSubtle,
     paddingTop: spacing.lg,
     paddingHorizontal: spacing.sm,
   },
-  brand: {
-    ...type.title3,
-    paddingHorizontal: spacing.sm,
-    marginBottom: spacing.md,
-    fontFamily,
-  },
   sectionBlock: { marginBottom: spacing.md },
-  sectionLabel: {
-    ...type.sectionLabel,
-    paddingHorizontal: spacing.sm,
-    marginBottom: 4,
-  },
   navItem: {
     paddingVertical: 9,
     paddingHorizontal: 12,
     borderRadius: radius.md,
     marginBottom: 2,
   },
-  navItemOn: { backgroundColor: colors.bgSidebarActive },
-  navText: { ...type.callout, color: colors.textSecondary, fontWeight: "600" },
-  navTextOn: { color: colors.accentBlue },
   navRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   navBadge: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.accentBlue,
   },
-  pane: { flex: 1, minWidth: 0, backgroundColor: colors.bgPage },
+  pane: { flex: 1, minWidth: 0 },
   paneHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -175,18 +218,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderSubtle,
   },
-  paneTitle: { ...type.title2 },
   closeBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.bgMuted,
     alignItems: "center",
     justifyContent: "center",
   },
-  closeGlyph: { fontSize: 14, color: colors.textSecondary, fontWeight: "600" },
+  closeGlyph: { fontSize: 14, fontWeight: "600" },
   paneScroll: { flex: 1 },
   paneContent: {
     padding: spacing.xl,

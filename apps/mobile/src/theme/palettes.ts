@@ -1,12 +1,14 @@
 import type { TextStyle } from "react-native";
-import { Platform } from "react-native";
 import { colors as lightColors, fontFamily, type as lightType } from "./tokens";
 
 export type ColorPalette = { readonly [K in keyof typeof lightColors]: string };
 
 export const lightPalette: ColorPalette = { ...lightColors };
 
-/** Copilot-like dark surfaces for Settings → Theme Dark. */
+/**
+ * Copilot-like dark surfaces — intentional full theme (not soft-hide).
+ * Contrast targets: page/cards/sidebar/tabs/modals/tables readable end-to-end.
+ */
 export const darkPalette: ColorPalette = {
   ...lightColors,
   bgPage: "#0B1220",
@@ -14,14 +16,15 @@ export const darkPalette: ColorPalette = {
   bgElevated: "#1A2336",
   bgMuted: "#1E293B",
   bgInput: "#111827",
-  bgModalScrim: "rgba(0, 0, 0, 0.55)",
+  bgModalScrim: "rgba(0, 0, 0, 0.62)",
   bgSelection: "#0F3D32",
   bgSelectionBar: "#3B82F6",
   bgSidebarActive: "#1E3A5F",
   textPrimary: "#E8EEF6",
   textSecondary: "#9AA8BC",
   textTertiary: "#7B879C",
-  textInverse: "#0B1220",
+  // Stay white on accent/filled buttons (do not invert).
+  textInverse: "#FFFFFF",
   textLink: "#93C5FD",
   borderSubtle: "#2A3548",
   borderHairline: "#1F2A3D",
@@ -45,6 +48,7 @@ export const darkPalette: ColorPalette = {
   tabInactive: "#7B879C",
   toggleOn: "#3B82F6",
   toggleOff: "#4B5563",
+  // Time-range segment: light chip on dark track
   segmentActiveBg: "#E5E7EB",
   segmentActiveText: "#111827",
   segmentInactiveBg: "transparent",
@@ -53,7 +57,7 @@ export const darkPalette: ColorPalette = {
   pillText: "#CBD5E1",
   categoryPillBg: "#1E293B",
   sparkleBlue: "#60A5FA",
-  sparkleHalo: "rgba(96, 165, 250, 0.25)",
+  sparkleHalo: "rgba(96, 165, 250, 0.28)",
   progressTrack: "#1F2A3D",
   progressFill: "#E8EEF6",
   danger: "#F87171",
@@ -72,27 +76,19 @@ export const darkPalette: ColorPalette = {
   chipBg: "#1E293B",
   chipOn: "#E8EEF6",
   border: "#2A3548",
-  overlay: "rgba(0, 0, 0, 0.55)",
-  shadow: "rgba(0, 0, 0, 0.35)",
+  overlay: "rgba(0, 0, 0, 0.62)",
+  shadow: "rgba(0, 0, 0, 0.45)",
 };
 
 export type ThemeMode = "Light" | "Auto" | "Dark";
 
-/**
- * Dark remains in ThemeMode / ThemeProvider plumbing, but is not a selectable
- * product feature until cards/modals/tables have real dark theming.
- * Half-dark is worse than Light — do not treat Dark as PASS.
- */
-export const DARK_THEME_AVAILABLE = false;
+/** Full Dark is a shipped product feature (Appearance Light | Auto | Dark). */
+export const DARK_THEME_AVAILABLE = true;
 
 export function resolveThemeMode(
   preference: ThemeMode,
   systemDark: boolean,
 ): "Light" | "Dark" {
-  if (!DARK_THEME_AVAILABLE) {
-    // Light-first: keep Light; Auto only when it would resolve to light.
-    return "Light";
-  }
   if (preference === "Light") return "Light";
   if (preference === "Dark") return "Dark";
   return systemDark ? "Dark" : "Light";
@@ -117,51 +113,163 @@ export function buildType(palette: ColorPalette): typeof lightType {
   return out as typeof lightType;
 }
 
-/** Web: force dark surfaces over RN-web inline light tokens. */
+function parseHex(hex: string): { r: number; g: number; b: number } | null {
+  const m = /^#([0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+function rgbCss({ r, g, b }: { r: number; g: number; b: number }): string {
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function rgbCssCompact({ r, g, b }: { r: number; g: number; b: number }): string {
+  return `rgb(${r},${g},${b})`;
+}
+
+type PropKind = "background-color" | "color" | "border-color";
+
+function rule(prop: PropKind, from: string, to: string): string {
+  return `html[data-cc-theme="dark"] #root [style*="${prop}: ${from}"],\nhtml[data-cc-theme="dark"] #root [style*="${prop}:${from}"] {\n  ${prop}: ${to} !important;\n}`;
+}
+
+/**
+ * Web: remap RN-web inline light tokens baked by StyleSheet.create.
+ * background remaps include white→card; color remaps skip pure white (inverse text).
+ */
 export function darkThemeCss(): string {
   const d = darkPalette;
-  return `
-html[data-cc-theme="dark"] body,
+  const l = lightPalette;
+  const chunks: string[] = [
+    `html[data-cc-theme="dark"] body,
 html[data-cc-theme="dark"] #root {
   background-color: ${d.bgPage} !important;
   color: ${d.textPrimary} !important;
   color-scheme: dark;
-}
-html[data-cc-theme="dark"] #root [style*="background-color: rgb(242, 244, 247)"],
-html[data-cc-theme="dark"] #root [style*="background-color:rgb(242, 244, 247)"] {
-  background-color: ${d.bgPage} !important;
-}
-html[data-cc-theme="dark"] #root [style*="background-color: rgb(255, 255, 255)"],
-html[data-cc-theme="dark"] #root [style*="background-color:rgb(255, 255, 255)"] {
-  background-color: ${d.bgCard} !important;
-}
-html[data-cc-theme="dark"] #root [style*="background-color: rgb(238, 241, 245)"],
-html[data-cc-theme="dark"] #root [style*="background-color:rgb(238, 241, 245)"] {
-  background-color: ${d.bgMuted} !important;
-}
-html[data-cc-theme="dark"] #root [style*="background-color: rgb(247, 248, 250)"],
-html[data-cc-theme="dark"] #root [style*="background-color:rgb(247, 248, 250)"] {
-  background-color: ${d.bgInput} !important;
-}
-html[data-cc-theme="dark"] #root [style*="background-color: rgb(235, 242, 255)"],
-html[data-cc-theme="dark"] #root [style*="background-color:rgb(235, 242, 255)"] {
-  background-color: ${d.accentBlueSoft} !important;
-}
-html[data-cc-theme="dark"] #root [style*="color: rgb(27, 43, 75)"],
-html[data-cc-theme="dark"] #root [style*="color:rgb(27, 43, 75)"] {
-  color: ${d.textPrimary} !important;
-}
-html[data-cc-theme="dark"] #root [style*="color: rgb(107, 122, 144)"],
-html[data-cc-theme="dark"] #root [style*="color:rgb(107, 122, 144)"] {
-  color: ${d.textSecondary} !important;
-}
-html[data-cc-theme="dark"] #root [style*="color: rgb(138, 148, 166)"],
-html[data-cc-theme="dark"] #root [style*="color:rgb(138, 148, 166)"] {
-  color: ${d.textTertiary} !important;
-}
-html[data-cc-theme="dark"] #root [style*="border-color: rgb(229, 231, 235)"],
-html[data-cc-theme="dark"] #root [style*="border-color:rgb(229, 231, 235)"] {
-  border-color: ${d.borderSubtle} !important;
-}
-`.trim();
+}`,
+  ];
+
+  const seenBg = new Set<string>();
+  const seenFg = new Set<string>();
+  const seenBorder = new Set<string>();
+
+  const addHexPair = (
+    kind: PropKind,
+    lightHex: string,
+    darkHex: string,
+    seen: Set<string>,
+  ) => {
+    if (lightHex === darkHex) return;
+    const from = parseHex(lightHex);
+    const to = parseHex(darkHex);
+    if (!from || !to) return;
+    const key = `${from.r},${from.g},${from.b}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const toHex = darkHex;
+    chunks.push(rule(kind, rgbCss(from), toHex));
+    chunks.push(rule(kind, rgbCssCompact(from), toHex));
+  };
+
+  // Backgrounds — every differing hex token (white cards included).
+  for (const key of Object.keys(l) as (keyof ColorPalette)[]) {
+    const lv = l[key];
+    const dv = d[key];
+    if (typeof lv !== "string" || typeof dv !== "string") continue;
+    if (lv.startsWith("#") && dv.startsWith("#")) {
+      addHexPair("background-color", lv, dv, seenBg);
+    }
+  }
+
+  // Foreground — skip pure white so inverse/on-accent text stays readable.
+  const fgKeys: (keyof ColorPalette)[] = [
+    "textPrimary",
+    "textSecondary",
+    "textTertiary",
+    "textLink",
+    "text",
+    "navy",
+    "spend",
+    "chipOn",
+    "pillText",
+    "tabActive",
+    "tabInactive",
+    "accentBlue",
+    "primary",
+    "accent",
+    "incomeGreen",
+    "incomeGreenText",
+    "income",
+    "overBudgetRed",
+    "overBudgetCallout",
+    "danger",
+    "warning",
+    "success",
+    "progressFill",
+    "segmentActiveText",
+  ];
+  for (const key of fgKeys) {
+    const lv = l[key];
+    const dv = d[key];
+    if (lv.startsWith("#") && dv.startsWith("#") && lv.toLowerCase() !== "#ffffff") {
+      addHexPair("color", lv, dv, seenFg);
+    }
+  }
+
+  // Borders / hairlines / dividers
+  const borderKeys: (keyof ColorPalette)[] = [
+    "borderSubtle",
+    "borderHairline",
+    "divider",
+    "border",
+  ];
+  for (const key of borderKeys) {
+    addHexPair("border-color", l[key], d[key], seenBorder);
+  }
+
+  // Extra border-* longhands RN-web may emit
+  for (const side of ["border-top-color", "border-bottom-color", "border-left-color", "border-right-color"] as const) {
+    for (const key of borderKeys) {
+      const from = parseHex(l[key]);
+      if (!from) continue;
+      const to = d[key];
+      chunks.push(
+        `html[data-cc-theme="dark"] #root [style*="${side}: ${rgbCss(from)}"],\nhtml[data-cc-theme="dark"] #root [style*="${side}:${rgbCssCompact(from)}"] {\n  ${side}: ${to} !important;\n}`,
+      );
+    }
+  }
+
+  // Soft hairline used by tab bar
+  chunks.push(`html[data-cc-theme="dark"] #root [style*="border-top-color: rgba(27, 43, 75, 0.06)"],
+html[data-cc-theme="dark"] #root [style*="border-top-color:rgba(27, 43, 75, 0.06)"] {
+  border-top-color: ${d.borderSubtle} !important;
+}`);
+
+  // Hardcoded light leftovers (Import / Tags / Rules)
+  for (const [fromHex, toHex] of [
+    ["#F5F7FA", d.bgPage],
+    ["#fafafa", d.bgMuted],
+    ["#C5CDD8", d.borderSubtle],
+    ["#2F6BFF", d.accentBlue],
+  ] as const) {
+    const from = parseHex(fromHex);
+    if (!from) continue;
+    chunks.push(rule("background-color", rgbCss(from), toHex));
+    chunks.push(rule("background-color", rgbCssCompact(from), toHex));
+    chunks.push(rule("border-color", rgbCss(from), toHex));
+    chunks.push(rule("border-color", rgbCssCompact(from), toHex));
+    chunks.push(rule("color", rgbCss(from), toHex));
+    chunks.push(rule("color", rgbCssCompact(from), toHex));
+  }
+
+  // Modal scrim rgba
+  chunks.push(`html[data-cc-theme="dark"] #root [style*="background-color: rgba(15, 23, 42, 0.4)"],
+html[data-cc-theme="dark"] #root [style*="background-color: rgba(15, 23, 42, 0.40)"],
+html[data-cc-theme="dark"] #root [style*="background-color:rgba(15, 23, 42, 0.4)"],
+html[data-cc-theme="dark"] #root [style*="background-color:rgba(15, 23, 42, 0.40)"] {
+  background-color: ${d.bgModalScrim} !important;
+}`);
+
+  return chunks.join("\n");
 }
