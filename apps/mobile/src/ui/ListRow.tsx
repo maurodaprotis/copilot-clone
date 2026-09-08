@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { colors, spacing, type } from "../theme";
+import { spacing, useTheme } from "../theme";
 
 type Props = {
   title: string;
@@ -19,22 +19,31 @@ export function ListRow({
   onPress,
   chevron,
 }: Props) {
+  const { colors, type } = useTheme();
   const content = (
     <View style={styles.row}>
       {left ? <View style={styles.left}>{left}</View> : null}
       <View style={styles.mid}>
-        <Text style={styles.title}>{title}</Text>
-        {subtitle ? <Text style={styles.sub}>{subtitle}</Text> : null}
+        <Text style={[type.headline, { color: colors.textPrimary }]}>{title}</Text>
+        {subtitle ? (
+          <Text style={[type.footnote, { marginTop: 2, color: colors.textTertiary }]}>
+            {subtitle}
+          </Text>
+        ) : null}
       </View>
       {right}
-      {chevron ? <Text style={styles.chev}>›</Text> : null}
+      {chevron ? (
+        <Text style={[styles.chev, { color: colors.textTertiary }]}>›</Text>
+      ) : null}
     </View>
   );
   if (onPress) {
     return (
       <Pressable
         onPress={onPress}
-        style={({ pressed }) => [pressed && styles.pressed]}
+        style={({ pressed }) => [
+          pressed && { backgroundColor: colors.accentBlueSoft },
+        ]}
       >
         {content}
       </Pressable>
@@ -54,13 +63,9 @@ const styles = StyleSheet.create({
   },
   left: { width: 36, alignItems: "center" },
   mid: { flex: 1, minWidth: 0 },
-  title: { ...type.headline },
-  sub: { ...type.footnote, marginTop: 2, color: colors.textTertiary },
   chev: {
     fontSize: 22,
-    color: colors.textTertiary,
     fontWeight: "300",
     marginLeft: 4,
   },
-  pressed: { backgroundColor: colors.accentBlueSoft },
 });

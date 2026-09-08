@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { colors, radius, spacing, type } from "../theme";
+import { radius, spacing, useTheme } from "../theme";
 
 type Props = {
   emoji?: string;
@@ -20,8 +20,9 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 export function CategoryPill({ emoji, name, color }: Props) {
+  const { colors, type } = useTheme();
   return (
-    <View style={styles.pill}>
+    <View style={[styles.pill, { backgroundColor: colors.categoryPillBg }]}>
       {emoji ? (
         <View
           style={[
@@ -32,7 +33,14 @@ export function CategoryPill({ emoji, name, color }: Props) {
           <Text style={styles.emoji}>{emoji}</Text>
         </View>
       ) : null}
-      <Text style={styles.text} numberOfLines={1}>
+      <Text
+        style={[
+          type.captionEmphasized,
+          styles.text,
+          { color: colors.textSecondary },
+        ]}
+        numberOfLines={1}
+      >
         {name}
       </Text>
     </View>
@@ -44,7 +52,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: colors.categoryPillBg,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
@@ -59,10 +66,8 @@ const styles = StyleSheet.create({
   },
   emoji: { fontSize: 10 },
   text: {
-    ...type.captionEmphasized,
     fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.3,
-    color: colors.textSecondary,
   },
 });

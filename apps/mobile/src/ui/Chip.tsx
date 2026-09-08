@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text } from "react-native";
-import { colors, radius, type } from "../theme";
+import { radius, useTheme } from "../theme";
 
 type Props = {
   label: string;
@@ -10,22 +10,25 @@ type Props = {
 };
 
 export function Chip({ label, selected, onPress, tone = "soft" }: Props) {
-  const onStyle =
-    tone === "filled"
-      ? selected && styles.onFilled
-      : selected && styles.onSoft;
-  const onText =
-    tone === "filled"
-      ? selected && styles.textOnFilled
-      : selected && styles.textOnSoft;
+  const { colors, type } = useTheme();
+  const bg = selected
+    ? tone === "filled"
+      ? colors.navy
+      : colors.accentBlueSoft
+    : colors.bgMuted;
+  const fg = selected
+    ? tone === "filled"
+      ? colors.textInverse
+      : colors.accentBlue
+    : colors.textSecondary;
   return (
     <Pressable
       onPress={onPress}
-      style={[styles.chip, onStyle]}
+      style={[styles.chip, { backgroundColor: bg }]}
       accessibilityRole="button"
       accessibilityState={{ selected: !!selected }}
     >
-      <Text style={[styles.text, onText]}>{label}</Text>
+      <Text style={[type.callout, styles.text, { color: fg }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -35,21 +38,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     paddingHorizontal: 12,
     paddingVertical: 7,
-    backgroundColor: colors.bgMuted,
     borderWidth: 0,
   },
-  onSoft: {
-    backgroundColor: colors.accentBlueSoft,
-  },
-  onFilled: {
-    backgroundColor: colors.navy,
-  },
   text: {
-    ...type.callout,
     fontSize: 13,
     fontWeight: "600",
-    color: colors.textSecondary,
   },
-  textOnSoft: { color: colors.accentBlue },
-  textOnFilled: { color: colors.textInverse },
 });

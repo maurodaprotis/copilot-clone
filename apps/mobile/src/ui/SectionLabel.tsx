@@ -1,5 +1,5 @@
 import { StyleSheet, Text, type StyleProp, type TextStyle } from "react-native";
-import { spacing, type } from "../theme";
+import { spacing, useTheme } from "../theme";
 
 type Props = {
   children: string;
@@ -7,12 +7,16 @@ type Props = {
 };
 
 export function SectionLabel({ children, style }: Props) {
-  return <Text style={[styles.label, style]}>{children}</Text>;
+  const { colors, type } = useTheme();
+  return (
+    <Text style={[type.sectionLabel, styles.label, { color: colors.textTertiary }, style]}>
+      {children}
+    </Text>
+  );
 }
 
 const styles = StyleSheet.create({
   label: {
-    ...type.sectionLabel,
     marginBottom: spacing.sm,
     marginLeft: 4,
     marginTop: spacing.xs,

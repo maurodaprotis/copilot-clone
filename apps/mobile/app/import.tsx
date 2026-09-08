@@ -548,11 +548,11 @@ const styles = StyleSheet.create({
   steps: { flexDirection: "row", gap: 6, marginBottom: spacing.md },
   step: { flex: 1, height: 4, borderRadius: 999, backgroundColor: colors.borderSubtle },
   stepOn: { backgroundColor: colors.accentBlue },
-  stepDone: { backgroundColor: "#93C5FD" },
+  stepDone: { backgroundColor: colors.assetBlueDot },
   drop: {
     borderWidth: 1.5,
     borderStyle: "dashed",
-    borderColor: "#C5CDD8",
+    borderColor: colors.borderSubtle,
     borderRadius: radius.lg,
     backgroundColor: colors.bgInput,
     padding: spacing.md,

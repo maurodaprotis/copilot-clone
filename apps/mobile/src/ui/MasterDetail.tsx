@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
-import { colors, layout } from "../theme";
+import { layout, useTheme } from "../theme";
 import { useIsDesktopWeb } from "./useIsDesktopWeb";
 
 type Props = {
@@ -14,13 +14,29 @@ type Props = {
 /** Web desktop: list ~58% / detail ~42%. Mobile: list only (detail rendered by caller via modal). */
 export function MasterDetail({ list, detail, style, split = true }: Props) {
   const desktop = useIsDesktopWeb();
+  const { colors } = useTheme();
   if (!desktop || !split) {
     return <View style={[{ flex: 1 }, style]}>{list}</View>;
   }
   return (
-    <View style={[styles.row, style]}>
-      <View style={styles.list}>{list}</View>
-      <View style={styles.detail} pointerEvents="auto">{detail}</View>
+    <View style={[styles.row, { backgroundColor: colors.bgPage }, style]}>
+      <View
+        style={[
+          styles.list,
+          {
+            borderRightColor: colors.borderSubtle,
+            backgroundColor: colors.bgPage,
+          },
+        ]}
+      >
+        {list}
+      </View>
+      <View
+        style={[styles.detail, { backgroundColor: colors.bgElevated }]}
+        pointerEvents="auto"
+      >
+        {detail}
+      </View>
     </View>
   );
 }
@@ -30,7 +46,6 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     minHeight: 0,
-    backgroundColor: colors.bgPage,
   },
   list: {
     flexBasis: `${layout.listPaneRatio * 100}%`,
@@ -38,11 +53,8 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     minWidth: 0,
     minHeight: 0,
-    // Clip paint but keep list above detail for hit-testing (2nd+ holdings rows).
     overflow: "hidden",
     borderRightWidth: StyleSheet.hairlineWidth,
-    borderRightColor: colors.borderSubtle,
-    backgroundColor: colors.bgPage,
     zIndex: 2,
     elevation: 2,
   },
@@ -51,7 +63,6 @@ const styles = StyleSheet.create({
     minWidth: 0,
     minHeight: 0,
     overflow: "hidden",
-    backgroundColor: colors.bgElevated,
     zIndex: 0,
     elevation: 0,
   },

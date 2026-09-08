@@ -1,5 +1,5 @@
-import { StyleSheet, Text, type StyleProp, type TextStyle } from "react-native";
-import { colors, type } from "../theme";
+import { Text, type StyleProp, type TextStyle } from "react-native";
+import { useTheme } from "../theme";
 
 type Variant = "expense" | "income" | "over" | "neutral";
 
@@ -11,6 +11,7 @@ type Props = {
 };
 
 export function Amount({ value, variant = "expense", size = "list", style }: Props) {
+  const { colors, type } = useTheme();
   const sizeStyle =
     size === "display"
       ? type.displayAmount

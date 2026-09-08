@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
-import { colors, radius, spacing, type } from "../theme";
+import { radius, spacing, useTheme } from "../theme";
 
 type Props = {
   options: string[];
@@ -17,8 +17,9 @@ export function SegmentedControl({
   tone = "dark",
   style,
 }: Props) {
+  const { colors, type } = useTheme();
   return (
-    <View style={[styles.track, style]}>
+    <View style={[styles.track, { backgroundColor: colors.segmentTrackBg }, style]}>
       {options.map((opt) => {
         const on = opt === value;
         return (
@@ -27,13 +28,30 @@ export function SegmentedControl({
             onPress={() => onChange(opt)}
             style={[
               styles.item,
-              on && (tone === "dark" ? styles.itemOnDark : styles.itemOnLight),
+              on &&
+                (tone === "dark"
+                  ? { backgroundColor: colors.segmentActiveBg }
+                  : {
+                      backgroundColor: colors.bgCard,
+                      shadowColor: colors.textPrimary,
+                      shadowOpacity: 0.08,
+                      shadowRadius: 3,
+                      shadowOffset: { width: 0, height: 1 },
+                    }),
             ]}
           >
             <Text
               style={[
-                styles.label,
-                on && (tone === "dark" ? styles.labelOnDark : styles.labelOnLight),
+                type.callout,
+                {
+                  fontWeight: "600",
+                  fontSize: 13,
+                  color: colors.textSecondary,
+                },
+                on &&
+                  (tone === "dark"
+                    ? { color: colors.segmentActiveText }
+                    : { color: colors.textPrimary }),
               ]}
             >
               {opt}
@@ -48,7 +66,6 @@ export function SegmentedControl({
 const styles = StyleSheet.create({
   track: {
     flexDirection: "row",
-    backgroundColor: colors.segmentTrackBg,
     borderRadius: radius.pill,
     padding: 3,
     gap: 2,
@@ -60,15 +77,4 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignItems: "center",
   },
-  itemOnDark: { backgroundColor: colors.segmentActiveBg },
-  itemOnLight: {
-    backgroundColor: colors.bgCard,
-    shadowColor: "#1B2B4B",
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-  },
-  label: { ...type.callout, fontWeight: "600", color: colors.textSecondary, fontSize: 13 },
-  labelOnDark: { color: colors.segmentActiveText },
-  labelOnLight: { color: colors.textPrimary },
 });

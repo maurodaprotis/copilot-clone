@@ -1,6 +1,6 @@
 import { Tabs } from "expo-router";
 import { Platform, StyleSheet, Text, View } from "react-native";
-import { colors, fontFamily, shadow } from "../../src/theme";
+import { fontFamily, shadow, useTheme } from "../../src/theme";
 import { useIsDesktopWeb } from "../../src/ui";
 
 /** Outline-ish tab glyphs (SF Symbols–like), no Material chrome. */
@@ -11,6 +11,7 @@ function TabGlyph({
   kind: "home" | "grid" | "list" | "bars" | "more";
   focused: boolean;
 }) {
+  const { colors } = useTheme();
   const color = focused ? colors.tabActive : colors.tabInactive;
   const map = {
     home: "⌂",
@@ -30,6 +31,7 @@ function TabGlyph({
 
 export default function TabsLayout() {
   const desktop = useIsDesktopWeb();
+  const { colors } = useTheme();
 
   return (
     <Tabs
@@ -47,7 +49,7 @@ export default function TabsLayout() {
           ? { display: "none", height: 0, overflow: "hidden" }
           : {
               backgroundColor: colors.bgElevated,
-              borderTopColor: "rgba(27,43,75,0.06)",
+              borderTopColor: colors.borderSubtle,
               borderTopWidth: StyleSheet.hairlineWidth,
               height: Platform.OS === "web" ? 64 : undefined,
               paddingTop: 6,

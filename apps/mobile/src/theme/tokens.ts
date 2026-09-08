@@ -2,7 +2,7 @@ import { Platform, type TextStyle, type ViewStyle } from "react-native";
 
 /**
  * Design SoT from /workspace/copilot-ui-polish/tokens.json
- * Light theme only. Aliases keep existing screens compiling.
+ * Light SoT tokens. Dark overrides live in palettes.ts; ThemeProvider swaps at runtime.
  */
 export const colors = {
   // Canonical SoT

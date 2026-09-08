@@ -14,8 +14,10 @@ import type { Tag } from "@copilot-clone/domain";
 import { listTags, upsertTagLocal } from "../src/offline/rulesTagsSplits";
 import { syncOutbox } from "../src/offline/syncOutbox";
 import { createApiTransport } from "../src/sync/apiTransport";
+import { useTheme } from "../src/theme";
 
 export default function TagsScreen() {
+  const { colors } = useTheme();
   const [tags, setTags] = useState<Tag[]>([]);
   const [name, setName] = useState("Business");
   const [color, setColor] = useState("#3366ff");
@@ -51,30 +53,30 @@ export default function TagsScreen() {
     <>
       <Stack.Screen options={{ title: "Tags" }} />
       <ScrollView
-        style={styles.scroll}
+        style={[styles.scroll, { backgroundColor: colors.bgPage }]}
         contentContainerStyle={styles.container}
         refreshControl={
           <RefreshControl refreshing={false} onRefresh={() => void reload()} />
         }
       >
-        <Text style={styles.sub}>
+        <Text style={[styles.sub, { color: colors.textSecondary }]}>
           Orthogonal labels · no budget impact · multi-tag on txn detail
         </Text>
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: colors.bgCard, borderColor: colors.borderSubtle }]}>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.bgInput, borderColor: colors.borderSubtle, color: colors.textPrimary }]}
             value={name}
             onChangeText={setName}
             placeholder="Tag name"
           />
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.bgInput, borderColor: colors.borderSubtle, color: colors.textPrimary }]}
             value={color}
             onChangeText={setColor}
             placeholder="#hex color"
             autoCapitalize="none"
           />
-          <Pressable style={styles.btn} onPress={() => void onSave()} disabled={busy}>
+          <Pressable style={[styles.btn, { backgroundColor: colors.accentBlue }]} onPress={() => void onSave()} disabled={busy}>
             {busy ? (
               <ActivityIndicator color="#fff" />
             ) : (
@@ -83,11 +85,11 @@ export default function TagsScreen() {
           </Pressable>
           {msg ? <Text style={styles.msg}>{msg}</Text> : null}
         </View>
-        <Text style={styles.section}>Tags ({tags.length})</Text>
+        <Text style={[styles.section, { color: colors.textPrimary }]}>Tags ({tags.length})</Text>
         {tags.map((t) => (
-          <View key={t.id} style={styles.card}>
+          <View key={t.id} style={[styles.card, { backgroundColor: colors.bgCard, borderColor: colors.borderSubtle }]}>
             <View style={[styles.dot, { backgroundColor: t.color }]} />
-            <Text style={styles.cardTitle}>{t.name}</Text>
+            <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>{t.name}</Text>
           </View>
         ))}
       </ScrollView>
@@ -96,16 +98,16 @@ export default function TagsScreen() {
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: "#F5F7FA" },
+  scroll: { flex: 1 },
   container: { padding: 20, paddingBottom: 48 },
-  sub: { color: "#666", marginBottom: 16, fontSize: 12 },
+  sub: { marginBottom: 16, fontSize: 12 },
   card: {
-    backgroundColor: "#fff",
+    backgroundColor: "transparent",
     borderRadius: 12,
     padding: 14,
     marginBottom: 10,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#e2e2e6",
+    borderColor: "transparent",
     flexDirection: "row",
     flexWrap: "wrap",
     alignItems: "center",
@@ -118,11 +120,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 8,
-    backgroundColor: "#fafafa",
+    backgroundColor: "transparent",
     width: "100%",
   },
   btn: {
-    backgroundColor: "#2F6BFF",
+    backgroundColor: "transparent",
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: "center",

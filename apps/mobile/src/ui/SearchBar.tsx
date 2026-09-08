@@ -1,5 +1,5 @@
 import { StyleSheet, Text, TextInput, View, type StyleProp, type ViewStyle } from "react-native";
-import { colors, radius, spacing, type } from "../theme";
+import { radius, spacing, useTheme } from "../theme";
 
 type Props = {
   value: string;
@@ -14,15 +14,16 @@ export function SearchBar({
   placeholder = "Search",
   style,
 }: Props) {
+  const { colors, type } = useTheme();
   return (
-    <View style={[styles.wrap, style]}>
-      <Text style={styles.icon}>⌕</Text>
+    <View style={[styles.wrap, { backgroundColor: colors.bgInput }, style]}>
+      <Text style={[styles.icon, { color: colors.textTertiary }]}>⌕</Text>
       <TextInput
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor={colors.textTertiary}
-        style={styles.input}
+        style={[styles.input, type.body, { color: colors.textPrimary }]}
         autoCorrect={false}
         autoCapitalize="none"
         clearButtonMode="while-editing"
@@ -35,17 +36,14 @@ const styles = StyleSheet.create({
   wrap: {
     height: 40,
     borderRadius: radius.input,
-    backgroundColor: colors.bgInput,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: spacing.md,
     gap: spacing.sm,
   },
-  icon: { fontSize: 16, color: colors.textTertiary },
+  icon: { fontSize: 16 },
   input: {
     flex: 1,
-    ...type.body,
     padding: 0,
-    color: colors.textPrimary,
   },
 });
